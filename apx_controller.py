@@ -410,37 +410,55 @@ class APxController:
             self._state.apx_state = APxState.RUNNING_STEP
             logger.info(f"Running measurement: {signal_path_name}/{measurement_name}")
             
-            # =================================================================
-            # STUB: APx .NET API call to run the measurement
-            # =================================================================
-            # TODO: Implement actual APx API calls. Example:
-            #
-            # signal_path = self._apx_instance.Sequence[signal_path_name]
-            # measurement = signal_path[measurement_name]
-            # 
-            # # Run the measurement
-            # measurement.Run()
-            # 
-            # # Get results
-            # passed = True
-            # meter_values = {}
-            # if measurement.HasSequenceResults:
-            #     for result in measurement.SequenceResults:
-            #         passed = passed and result.PassedUpperLimitCheck and result.PassedLowerLimitCheck
-            #         if result.HasMeterValues:
-            #             values = result.GetMeterValues()
-            #             for i, v in enumerate(values):
-            #                 meter_values[f"ch{i+1}"] = v
-            # =================================================================
+            # Get the measurement from the sequence
+            # In pythonnet, use .Item() for string-based indexer access
+            # C# pattern: APx.Sequence["SignalPath"]["Measurement"]
+            # Python pattern: APx.Sequence.Item("SignalPath").Item("Measurement")
+            sequence = self._apx_instance.Sequence
+            signal_path = sequence.GetSignalPath(signal_path_name)
+            measurement = signal_path.GetMeasurement(measurement_name)
             
-            logger.info(f"STUB: Would run {signal_path_name}/{measurement_name}")
-            time.sleep(0.2)  # Simulate some work
+            # Run the measurement
+            logger.info(f"Calling measurement.Run()")
+            measurement.Run()
+            logger.info(f"measurement.Run() completed")
             
-            # STUB: Mock result
+            # Get results
             passed = True
-            meter_values = {"ch1": -0.5, "ch2": -0.4}
+            meter_values = {}
             
-            # =================================================================
+            if measurement.HasSequenceResults:
+                seq_results = measurement.SequenceResults
+                result_count = seq_results.Count
+                logger.info(f"Measurement has {result_count} sequence result(s)")
+                
+                # Iterate through results using index-based access
+                # Use .Item() or .GetResult() depending on API
+                for r_idx in range(result_count):
+                    try:
+                        result = seq_results.Item(r_idx)
+                    except Exception:
+                        # Fallback: try direct indexing
+                        result = seq_results[r_idx]
+                    
+                    # Check pass/fail for this result
+                    upper_passed = result.PassedUpperLimitCheck
+                    lower_passed = result.PassedLowerLimitCheck
+                    passed = passed and upper_passed and lower_passed
+                    
+                    logger.info(
+                        f"  Result {r_idx}: upper={upper_passed}, lower={lower_passed}"
+                    )
+                    
+                    # Get meter values if available
+                    if result.HasMeterValues:
+                        values = result.GetMeterValues()
+                        for i in range(len(values)):
+                            meter_values[f"ch{i+1}"] = values[i]
+                        logger.info(f"  Meter values: {meter_values}")
+            else:
+                logger.warning("Measurement has no sequence results")
+                passed = False
             
             self._state.apx_state = APxState.IDLE
             completed_at = datetime.now()
