@@ -336,6 +336,9 @@ class APxController:
         """
         Get the structure of the loaded sequence.
         
+        Traverses the APx Sequence to enumerate all signal paths and their
+        measurements, including their checked state.
+        
         Returns:
             Tuple of (list of SignalPathInfo, error message or None)
         """
@@ -346,52 +349,33 @@ class APxController:
             return [], "APx not running"
         
         try:
-            # =================================================================
-            # STUB: Get sequence structure from APx .NET API
-            # =================================================================
-            # TODO: Implement actual APx API calls. Example:
-            #
-            # signal_paths = []
-            # for sp_idx, signal_path in enumerate(self._apx_instance.Sequence):
-            #     measurements = []
-            #     for m_idx, measurement in enumerate(signal_path):
-            #         measurements.append(MeasurementInfo(
-            #             index=m_idx,
-            #             name=measurement.Name,
-            #             checked=measurement.Checked,
-            #         ))
-            #     signal_paths.append(SignalPathInfo(
-            #         index=sp_idx,
-            #         name=signal_path.Name,
-            #         checked=signal_path.Checked,
-            #         measurements=measurements,
-            #     ))
-            # return signal_paths, None
-            # =================================================================
+            signal_paths = []
             
-            # STUB: Return mock data for testing
-            logger.info("STUB: Returning mock sequence structure")
-            signal_paths = [
-                SignalPathInfo(
-                    index=0,
-                    name="Analog Output",
-                    checked=True,
-                    measurements=[
-                        MeasurementInfo(index=0, name="Level and Gain", checked=True),
-                        MeasurementInfo(index=1, name="THD+N", checked=True),
-                        MeasurementInfo(index=2, name="Frequency Response", checked=True),
-                    ],
-                ),
-                SignalPathInfo(
-                    index=1,
-                    name="Digital Input",
-                    checked=True,
-                    measurements=[
-                        MeasurementInfo(index=0, name="Level and Gain", checked=True),
-                        MeasurementInfo(index=1, name="Crosstalk", checked=False),
-                    ],
-                ),
-            ]
+            # Traverse each signal path in the sequence
+            # APx.Sequence is an IEnumerable<ISignalPath>
+            for sp_idx, signal_path in enumerate(self._apx_instance.Sequence):
+                measurements = []
+                
+                # Traverse each measurement in the signal path
+                # ISignalPath is an IEnumerable<ISequenceMeasurement>
+                for m_idx, measurement in enumerate(signal_path):
+                    measurements.append(MeasurementInfo(
+                        index=m_idx,
+                        name=measurement.Name,
+                        checked=measurement.Checked,
+                    ))
+                
+                signal_paths.append(SignalPathInfo(
+                    index=sp_idx,
+                    name=signal_path.Name,
+                    checked=signal_path.Checked,
+                    measurements=measurements,
+                ))
+            
+            logger.info(
+                f"Retrieved sequence structure: {len(signal_paths)} signal paths, "
+                f"{sum(len(sp.measurements) for sp in signal_paths)} total measurements"
+            )
             return signal_paths, None
             
         except Exception as e:
