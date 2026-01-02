@@ -185,21 +185,16 @@ class APxController:
             self._init_clr()
             
             # Import APx types after CLR is initialized
-            from AudioPrecision.API import APx500_Application, APxOperatingMode
+            from AudioPrecision.API import APx500, APx500_Application, APxOperatingMode
             
             # Determine the operating mode
             mode = getattr(APxOperatingMode, apx_mode, APxOperatingMode.SequenceMode)
             
             # Create APx application instance
             logger.info(f"Creating APx500_Application with mode={apx_mode}, args={apx_args}")
-            self._apx_instance = APx500_Application(mode, apx_args)
-            
-            # Set Visible = True first (matching your working code)
-            logger.info("Setting Visible = True")
+            self._apx_instance = APx500(mode, apx_args)
             self._apx_instance.Visible = True
-            
-            # Small delay to ensure APx is fully initialized
-            time.sleep(0.5)
+            self._apx_instance.SignalMonitorsEnabled = False
             
             # Open the project - use absolute path as string
             project_path_str = str(resolved_path)
@@ -208,9 +203,6 @@ class APxController:
             
             self._apx_instance.OpenProject(project_path_str)
             logger.info("OpenProject call returned")
-            
-            # Wait for project to load
-            time.sleep(0.5)
             
             # Verify project loaded by checking Sequence count and names
             try:

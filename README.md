@@ -55,21 +55,12 @@ netsh advfirewall firewall add rule name="apxctrl TCP Port 5000" dir=out action=
 Basic usage:
 
 ```bash
-python main.py
+uv run .\main.py --kill-existing
 ```
+
+Note that you can't run this from a no-GUI terminal (like an SSH session), it will not work.
 
 With options:
-
-```bash
-# Kill any existing APx500 processes on startup
-python main.py --kill-existing
-
-# Custom port
-python main.py --port 8080
-
-# Debug mode (not for production)
-python main.py --debug
-```
 
 ### Command Line Options
 
