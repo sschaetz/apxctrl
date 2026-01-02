@@ -83,23 +83,6 @@ class SetupRequest(BaseModel):
     )
 
 
-class RunStepRequest(BaseModel):
-    """Request for running a sequence step."""
-    sequence: str = Field(..., description="Name of the sequence to run")
-    signal: str = Field(..., description="Name of the signal to use")
-    timeout_seconds: float = Field(
-        default=120.0,
-        ge=1.0,
-        le=3600.0,
-        description="Maximum time to wait for step completion (default: 2 min)"
-    )
-
-
-class GetResultsRequest(BaseModel):
-    """Request for getting result files."""
-    directory: str = Field(..., description="Directory path to zip and return")
-
-
 class ShutdownRequest(BaseModel):
     """Request for shutdown endpoint."""
     force: bool = Field(
@@ -131,22 +114,6 @@ class SetupResponse(BaseModel):
     killed_processes: int = 0
 
 
-class RunStepResponse(BaseModel):
-    """Response for run step endpoint."""
-    success: bool
-    message: str
-    sequence: Optional[str] = None
-    signal: Optional[str] = None
-    duration_seconds: Optional[float] = None
-    apx_state: APxState
-
-
-class GetResultsResponse(BaseModel):
-    """Response metadata for results (stub)."""
-    success: bool
-    message: str
-
-
 class ShutdownResponse(BaseModel):
     """Response for shutdown endpoint."""
     success: bool
@@ -173,3 +140,112 @@ class StatusResponse(BaseModel):
     last_error_at: Optional[datetime] = None
     server_started_at: datetime
     uptime_seconds: float
+
+
+# ============================================================================
+# Sequence Structure Models
+# ============================================================================
+
+class MeasurementInfo(BaseModel):
+    """Information about a single measurement."""
+    index: int
+    name: str
+    checked: bool
+
+
+class SignalPathInfo(BaseModel):
+    """Information about a signal path and its measurements."""
+    index: int
+    name: str
+    checked: bool
+    measurements: list[MeasurementInfo]
+
+
+class SequenceStructureResponse(BaseModel):
+    """Response containing the full sequence structure."""
+    success: bool
+    message: str
+    signal_paths: list[SignalPathInfo] = []
+    total_signal_paths: int = 0
+    total_measurements: int = 0
+    apx_state: APxState
+
+
+# ============================================================================
+# Run Signal Path Models
+# ============================================================================
+
+class RunSignalPathRequest(BaseModel):
+    """Request for running all measurements in a signal path."""
+    signal_path: str = Field(..., description="Name of the signal path to run")
+    timeout_seconds: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=3600.0,
+        description="Timeout per measurement (default: 2 min)"
+    )
+
+
+class MeasurementResult(BaseModel):
+    """Result of a single measurement run."""
+    name: str
+    success: bool
+    passed: bool = False
+    duration_seconds: float
+    error: Optional[str] = None
+    meter_values: Optional[dict] = None  # channel -> value
+
+
+class RunSignalPathResponse(BaseModel):
+    """Response for running a signal path."""
+    success: bool
+    message: str
+    signal_path: str
+    measurements_run: int = 0
+    measurements_passed: int = 0
+    measurements_failed: int = 0
+    total_duration_seconds: float = 0.0
+    results: list[MeasurementResult] = []
+    apx_state: APxState
+
+
+# ============================================================================
+# Run All and Export Report Models
+# ============================================================================
+
+class RunAllRequest(BaseModel):
+    """Request for running all measurements and exporting report."""
+    timeout_seconds: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=3600.0,
+        description="Timeout per measurement (default: 2 min)"
+    )
+    export_csv: bool = Field(
+        default=True,
+        description="Export CSV report after running"
+    )
+    export_pdf: bool = Field(
+        default=False,
+        description="Export PDF report after running"
+    )
+    report_directory: Optional[str] = Field(
+        default=None,
+        description="Directory to save reports (defaults to temp)"
+    )
+
+
+class RunAllResponse(BaseModel):
+    """Response for running all measurements."""
+    success: bool
+    message: str
+    signal_paths_run: int = 0
+    measurements_run: int = 0
+    measurements_passed: int = 0
+    measurements_failed: int = 0
+    total_duration_seconds: float = 0.0
+    all_passed: bool = False
+    csv_report_path: Optional[str] = None
+    pdf_report_path: Optional[str] = None
+    results_by_signal_path: dict[str, list[MeasurementResult]] = {}
+    apx_state: APxState

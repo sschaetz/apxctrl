@@ -1,6 +1,6 @@
 [project]
 name = "apxctrl"
-version = "0.2.0"
+version = "0.4.0"
 description = "APx500 Control Server - Remote control for Audio Precision test equipment"
 readme = "README.md"
 requires-python = ">=3.11"

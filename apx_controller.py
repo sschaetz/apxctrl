@@ -9,32 +9,23 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from models import APxState, ProjectInfo, ServerState
+from models import (
+    APxState,
+    MeasurementInfo,
+    MeasurementResult,
+    ProjectInfo,
+    ServerState,
+    SignalPathInfo,
+)
 
 logger = logging.getLogger(__name__)
 
 # APx500 process name (without .exe)
 APX_PROCESS_NAME = "APx500"
-
-
-@dataclass
-class RunStepResult:
-    """Result of running a sequence step."""
-    success: bool
-    sequence: str
-    signal: str
-    started_at: datetime
-    completed_at: datetime
-    error: Optional[str] = None
-
-    @property
-    def duration_seconds(self) -> float:
-        return (self.completed_at - self.started_at).total_seconds()
 
 
 class APxController:
@@ -201,111 +192,6 @@ class APxController:
             self._apx_instance = None
             return False
     
-    def run_step(
-        self,
-        sequence: str,
-        signal: str,
-        timeout_seconds: float = 120.0,
-    ) -> RunStepResult:
-        """
-        Run a sequence/signal step.
-        
-        Args:
-            sequence: Name of the sequence to run
-            signal: Name of the signal to use
-            timeout_seconds: Maximum time to wait for completion
-            
-        Returns:
-            RunStepResult with success status and timing information
-        """
-        started_at = datetime.now()
-        
-        # Validate state
-        if self._state.apx_state != APxState.IDLE:
-            return RunStepResult(
-                success=False,
-                sequence=sequence,
-                signal=signal,
-                started_at=started_at,
-                completed_at=datetime.now(),
-                error=f"APx not in IDLE state (current: {self._state.apx_state.value})",
-            )
-        
-        if self._apx_instance is None:
-            return RunStepResult(
-                success=False,
-                sequence=sequence,
-                signal=signal,
-                started_at=started_at,
-                completed_at=datetime.now(),
-                error="APx instance not initialized",
-            )
-        
-        try:
-            self._state.apx_state = APxState.RUNNING_STEP
-            logger.info(f"Running step: sequence={sequence}, signal={signal}")
-            
-            # =================================================================
-            # STUB: APx .NET API call to run the sequence/signal
-            # =================================================================
-            # TODO: Implement actual APx API calls here. Example:
-            #
-            # # Select the sequence
-            # self._apx_instance.Sequence.SetSequence(sequence)
-            # 
-            # # Select the signal
-            # self._apx_instance.Sequence.SetSignal(signal)
-            # 
-            # # Run the sequence
-            # self._apx_instance.Sequence.Run()
-            #
-            # # Wait for completion (with timeout)
-            # start_time = time.time()
-            # while self._apx_instance.Sequence.IsRunning:
-            #     if time.time() - start_time > timeout_seconds:
-            #         raise TimeoutError("Sequence timed out")
-            #     time.sleep(0.1)
-            # =================================================================
-            
-            logger.info(f"STUB: Would run sequence={sequence}, signal={signal}")
-            time.sleep(0.5)  # Simulate some work
-            
-            # =================================================================
-            # End of STUB
-            # =================================================================
-            
-            self._state.apx_state = APxState.IDLE
-            completed_at = datetime.now()
-            
-            logger.info(
-                f"Step completed: sequence={sequence}, signal={signal}, "
-                f"duration={(completed_at - started_at).total_seconds():.2f}s"
-            )
-            
-            return RunStepResult(
-                success=True,
-                sequence=sequence,
-                signal=signal,
-                started_at=started_at,
-                completed_at=completed_at,
-            )
-            
-        except Exception as e:
-            error_msg = f"Error running step: {e}"
-            logger.error(error_msg)
-            self._state.apx_state = APxState.ERROR
-            self._state.last_error = error_msg
-            self._state.last_error_at = datetime.now()
-            
-            return RunStepResult(
-                success=False,
-                sequence=sequence,
-                signal=signal,
-                started_at=started_at,
-                completed_at=datetime.now(),
-                error=error_msg,
-            )
-    
     def shutdown(self, force: bool = False) -> bool:
         """
         Shutdown APx500 gracefully.
@@ -387,4 +273,323 @@ class APxController:
             # - Try a simple API call to verify responsiveness
         
         return True
+
+    def get_sequence_structure(self) -> tuple[list[SignalPathInfo], Optional[str]]:
+        """
+        Get the structure of the loaded sequence.
+        
+        Returns:
+            Tuple of (list of SignalPathInfo, error message or None)
+        """
+        if self._apx_instance is None:
+            return [], "APx instance not initialized"
+        
+        if self._state.apx_state == APxState.NOT_RUNNING:
+            return [], "APx not running"
+        
+        try:
+            # =================================================================
+            # STUB: Get sequence structure from APx .NET API
+            # =================================================================
+            # TODO: Implement actual APx API calls. Example:
+            #
+            # signal_paths = []
+            # for sp_idx, signal_path in enumerate(self._apx_instance.Sequence):
+            #     measurements = []
+            #     for m_idx, measurement in enumerate(signal_path):
+            #         measurements.append(MeasurementInfo(
+            #             index=m_idx,
+            #             name=measurement.Name,
+            #             checked=measurement.Checked,
+            #         ))
+            #     signal_paths.append(SignalPathInfo(
+            #         index=sp_idx,
+            #         name=signal_path.Name,
+            #         checked=signal_path.Checked,
+            #         measurements=measurements,
+            #     ))
+            # return signal_paths, None
+            # =================================================================
+            
+            # STUB: Return mock data for testing
+            logger.info("STUB: Returning mock sequence structure")
+            signal_paths = [
+                SignalPathInfo(
+                    index=0,
+                    name="Analog Output",
+                    checked=True,
+                    measurements=[
+                        MeasurementInfo(index=0, name="Level and Gain", checked=True),
+                        MeasurementInfo(index=1, name="THD+N", checked=True),
+                        MeasurementInfo(index=2, name="Frequency Response", checked=True),
+                    ],
+                ),
+                SignalPathInfo(
+                    index=1,
+                    name="Digital Input",
+                    checked=True,
+                    measurements=[
+                        MeasurementInfo(index=0, name="Level and Gain", checked=True),
+                        MeasurementInfo(index=1, name="Crosstalk", checked=False),
+                    ],
+                ),
+            ]
+            return signal_paths, None
+            
+        except Exception as e:
+            error_msg = f"Error getting sequence structure: {e}"
+            logger.error(error_msg)
+            return [], error_msg
+
+    def run_measurement(
+        self,
+        signal_path_name: str,
+        measurement_name: str,
+        timeout_seconds: float = 120.0,
+    ) -> MeasurementResult:
+        """
+        Run a single measurement by signal path and measurement name.
+        
+        Args:
+            signal_path_name: Name of the signal path
+            measurement_name: Name of the measurement
+            timeout_seconds: Maximum time to wait for completion
+            
+        Returns:
+            MeasurementResult with success status and data
+        """
+        started_at = datetime.now()
+        
+        if self._apx_instance is None:
+            return MeasurementResult(
+                name=measurement_name,
+                success=False,
+                passed=False,
+                duration_seconds=0.0,
+                error="APx instance not initialized",
+            )
+        
+        try:
+            self._state.apx_state = APxState.RUNNING_STEP
+            logger.info(f"Running measurement: {signal_path_name}/{measurement_name}")
+            
+            # =================================================================
+            # STUB: APx .NET API call to run the measurement
+            # =================================================================
+            # TODO: Implement actual APx API calls. Example:
+            #
+            # signal_path = self._apx_instance.Sequence[signal_path_name]
+            # measurement = signal_path[measurement_name]
+            # 
+            # # Run the measurement
+            # measurement.Run()
+            # 
+            # # Get results
+            # passed = True
+            # meter_values = {}
+            # if measurement.HasSequenceResults:
+            #     for result in measurement.SequenceResults:
+            #         passed = passed and result.PassedUpperLimitCheck and result.PassedLowerLimitCheck
+            #         if result.HasMeterValues:
+            #             values = result.GetMeterValues()
+            #             for i, v in enumerate(values):
+            #                 meter_values[f"ch{i+1}"] = v
+            # =================================================================
+            
+            logger.info(f"STUB: Would run {signal_path_name}/{measurement_name}")
+            time.sleep(0.2)  # Simulate some work
+            
+            # STUB: Mock result
+            passed = True
+            meter_values = {"ch1": -0.5, "ch2": -0.4}
+            
+            # =================================================================
+            
+            self._state.apx_state = APxState.IDLE
+            completed_at = datetime.now()
+            duration = (completed_at - started_at).total_seconds()
+            
+            logger.info(
+                f"Measurement completed: {signal_path_name}/{measurement_name}, "
+                f"passed={passed}, duration={duration:.2f}s"
+            )
+            
+            return MeasurementResult(
+                name=measurement_name,
+                success=True,
+                passed=passed,
+                duration_seconds=duration,
+                meter_values=meter_values,
+            )
+            
+        except Exception as e:
+            error_msg = f"Error running measurement: {e}"
+            logger.error(error_msg)
+            self._state.apx_state = APxState.ERROR
+            self._state.last_error = error_msg
+            self._state.last_error_at = datetime.now()
+            
+            return MeasurementResult(
+                name=measurement_name,
+                success=False,
+                passed=False,
+                duration_seconds=(datetime.now() - started_at).total_seconds(),
+                error=error_msg,
+            )
+
+    def run_signal_path(
+        self,
+        signal_path_name: str,
+        timeout_seconds: float = 120.0,
+    ) -> tuple[list[MeasurementResult], Optional[str]]:
+        """
+        Run all checked measurements in a signal path.
+        
+        Args:
+            signal_path_name: Name of the signal path
+            timeout_seconds: Timeout per measurement
+            
+        Returns:
+            Tuple of (list of MeasurementResult, error message or None)
+        """
+        if self._apx_instance is None:
+            return [], "APx instance not initialized"
+        
+        if self._state.apx_state != APxState.IDLE:
+            return [], f"APx not in IDLE state (current: {self._state.apx_state.value})"
+        
+        results = []
+        
+        try:
+            # Get the sequence structure first
+            structure, error = self.get_sequence_structure()
+            if error:
+                return [], error
+            
+            # Find the signal path
+            signal_path = None
+            for sp in structure:
+                if sp.name == signal_path_name:
+                    signal_path = sp
+                    break
+            
+            if signal_path is None:
+                return [], f"Signal path '{signal_path_name}' not found"
+            
+            # Run each checked measurement
+            for measurement in signal_path.measurements:
+                if measurement.checked:
+                    result = self.run_measurement(
+                        signal_path_name=signal_path_name,
+                        measurement_name=measurement.name,
+                        timeout_seconds=timeout_seconds,
+                    )
+                    results.append(result)
+                    
+                    # If measurement failed to run (not just failed limits), stop
+                    if not result.success:
+                        logger.warning(
+                            f"Stopping signal path run due to measurement error: "
+                            f"{measurement.name}"
+                        )
+                        break
+            
+            return results, None
+            
+        except Exception as e:
+            error_msg = f"Error running signal path: {e}"
+            logger.error(error_msg)
+            return results, error_msg
+
+    def run_all_and_export(
+        self,
+        timeout_seconds: float = 120.0,
+        export_csv: bool = True,
+        export_pdf: bool = False,
+        report_directory: Optional[str] = None,
+    ) -> tuple[dict[str, list[MeasurementResult]], Optional[str], Optional[str], Optional[str]]:
+        """
+        Run all checked measurements and export reports.
+        
+        Args:
+            timeout_seconds: Timeout per measurement
+            export_csv: Whether to export CSV report
+            export_pdf: Whether to export PDF report
+            report_directory: Directory for reports (defaults to temp)
+            
+        Returns:
+            Tuple of (results dict by signal path, error, csv_path, pdf_path)
+        """
+        if self._apx_instance is None:
+            return {}, "APx instance not initialized", None, None
+        
+        if self._state.apx_state != APxState.IDLE:
+            return {}, f"APx not in IDLE state (current: {self._state.apx_state.value})", None, None
+        
+        results_by_signal_path: dict[str, list[MeasurementResult]] = {}
+        csv_path = None
+        pdf_path = None
+        
+        try:
+            # Get the sequence structure
+            structure, error = self.get_sequence_structure()
+            if error:
+                return {}, error, None, None
+            
+            # Run each checked signal path
+            for signal_path in structure:
+                if signal_path.checked:
+                    logger.info(f"Running signal path: {signal_path.name}")
+                    
+                    sp_results, sp_error = self.run_signal_path(
+                        signal_path_name=signal_path.name,
+                        timeout_seconds=timeout_seconds,
+                    )
+                    
+                    results_by_signal_path[signal_path.name] = sp_results
+                    
+                    if sp_error:
+                        logger.warning(f"Signal path error: {sp_error}")
+                        # Continue with other signal paths
+            
+            # Export reports
+            if report_directory:
+                report_dir = Path(report_directory)
+            else:
+                import tempfile
+                report_dir = Path(tempfile.gettempdir()) / "apxctrl" / "reports"
+            
+            report_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # =================================================================
+            # STUB: Export reports via APx API
+            # =================================================================
+            # TODO: Implement actual APx API calls. Example:
+            #
+            # if export_csv:
+            #     csv_path = str(report_dir / f"report_{timestamp}.csv")
+            #     self._apx_instance.Sequence.Report.ExportText(csv_path)
+            #     logger.info(f"Exported CSV report: {csv_path}")
+            #
+            # if export_pdf:
+            #     pdf_path = str(report_dir / f"report_{timestamp}.pdf")
+            #     self._apx_instance.Sequence.Report.ExportPdf(pdf_path)
+            #     logger.info(f"Exported PDF report: {pdf_path}")
+            # =================================================================
+            
+            if export_csv:
+                csv_path = str(report_dir / f"report_{timestamp}.csv")
+                logger.info(f"STUB: Would export CSV report to: {csv_path}")
+            
+            if export_pdf:
+                pdf_path = str(report_dir / f"report_{timestamp}.pdf")
+                logger.info(f"STUB: Would export PDF report to: {pdf_path}")
+            
+            return results_by_signal_path, None, csv_path, pdf_path
+            
+        except Exception as e:
+            error_msg = f"Error running all measurements: {e}"
+            logger.error(error_msg)
+            return results_by_signal_path, error_msg, csv_path, pdf_path
 

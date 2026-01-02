@@ -16,17 +16,19 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request
 
 from apx_controller import APxController
 from models import (
     APxState,
-    GetResultsRequest,
     HealthResponse,
     ProjectInfo,
     ResetResponse,
-    RunStepRequest,
-    RunStepResponse,
+    RunAllRequest,
+    RunAllResponse,
+    RunSignalPathRequest,
+    RunSignalPathResponse,
+    SequenceStructureResponse,
     ServerState,
     SetupResponse,
     ShutdownRequest,
@@ -76,14 +78,15 @@ def index():
     """Service information and available endpoints."""
     return jsonify({
         "service": "APx Control Server",
-        "version": "0.2.0",
+        "version": "0.4.0",
         "endpoints": {
             "GET /": "Service information",
             "GET /health": "Quick health check",
             "GET /status": "Detailed status",
             "POST /setup": "Upload project and launch APx",
-            "POST /run-step": "Run a sequence/signal step",
-            "POST /get-results": "Get result files (stub)",
+            "GET /sequence/structure": "Get sequence structure (signal paths and measurements)",
+            "POST /run-signal-path": "Run all measurements in a signal path",
+            "POST /run-all": "Run all measurements and export reports",
             "POST /shutdown": "Shutdown APx gracefully",
             "POST /reset": "Kill APx and reset state",
         },
@@ -246,16 +249,56 @@ def setup():
         ).model_dump(mode="json")), 500
 
 
-@app.route("/run-step", methods=["POST"])
-def run_step():
+@app.route("/sequence/structure", methods=["GET"])
+def get_sequence_structure():
     """
-    Run a sequence/signal step.
+    Get the structure of the loaded sequence.
+    
+    Returns the hierarchy of signal paths and measurements.
+    """
+    state = get_state()
+    controller = get_controller()
+    
+    # Check state
+    if state.apx_state == APxState.NOT_RUNNING:
+        return jsonify(SequenceStructureResponse(
+            success=False,
+            message="APx not running. Call /setup first.",
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 409
+    
+    # Get structure
+    signal_paths, error = controller.get_sequence_structure()
+    
+    if error:
+        return jsonify(SequenceStructureResponse(
+            success=False,
+            message=error,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+    
+    # Count totals
+    total_measurements = sum(len(sp.measurements) for sp in signal_paths)
+    
+    return jsonify(SequenceStructureResponse(
+        success=True,
+        message="Sequence structure retrieved successfully",
+        signal_paths=signal_paths,
+        total_signal_paths=len(signal_paths),
+        total_measurements=total_measurements,
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
+
+
+@app.route("/run-signal-path", methods=["POST"])
+def run_signal_path():
+    """
+    Run all checked measurements in a signal path.
     
     Expects JSON body:
     {
-        "sequence": "sequence_name",
-        "signal": "signal_name",
-        "timeout_seconds": 120.0  // optional, default 2 minutes
+        "signal_path": "Analog Output",
+        "timeout_seconds": 120.0  // optional, default 2 minutes per measurement
     }
     """
     state = get_state()
@@ -265,15 +308,93 @@ def run_step():
     try:
         data = request.get_json()
         if data is None:
-            return jsonify(RunStepResponse(
+            return jsonify(RunSignalPathResponse(
                 success=False,
                 message="Request body must be JSON",
+                signal_path="",
                 apx_state=state.apx_state,
             ).model_dump(mode="json")), 400
         
-        req = RunStepRequest(**data)
+        req = RunSignalPathRequest(**data)
     except Exception as e:
-        return jsonify(RunStepResponse(
+        return jsonify(RunSignalPathResponse(
+            success=False,
+            message=f"Invalid request: {e}",
+            signal_path="",
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 400
+    
+    # Check state
+    if state.apx_state != APxState.IDLE:
+        return jsonify(RunSignalPathResponse(
+            success=False,
+            message=f"APx not ready. Current state: {state.apx_state.value}",
+            signal_path=req.signal_path,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 409
+    
+    # Run signal path
+    results, error = controller.run_signal_path(
+        signal_path_name=req.signal_path,
+        timeout_seconds=req.timeout_seconds,
+    )
+    
+    # Calculate stats
+    measurements_run = len(results)
+    measurements_passed = sum(1 for r in results if r.passed)
+    measurements_failed = sum(1 for r in results if r.success and not r.passed)
+    total_duration = sum(r.duration_seconds for r in results)
+    all_success = all(r.success for r in results)
+    
+    if error:
+        return jsonify(RunSignalPathResponse(
+            success=False,
+            message=error,
+            signal_path=req.signal_path,
+            measurements_run=measurements_run,
+            measurements_passed=measurements_passed,
+            measurements_failed=measurements_failed,
+            total_duration_seconds=total_duration,
+            results=results,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+    
+    return jsonify(RunSignalPathResponse(
+        success=all_success,
+        message=f"Signal path '{req.signal_path}' completed. "
+                f"{measurements_passed}/{measurements_run} passed.",
+        signal_path=req.signal_path,
+        measurements_run=measurements_run,
+        measurements_passed=measurements_passed,
+        measurements_failed=measurements_failed,
+        total_duration_seconds=total_duration,
+        results=results,
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
+
+
+@app.route("/run-all", methods=["POST"])
+def run_all():
+    """
+    Run all checked measurements in all checked signal paths and export reports.
+    
+    Expects JSON body (all optional):
+    {
+        "timeout_seconds": 120.0,   // default 2 minutes per measurement
+        "export_csv": true,         // default true
+        "export_pdf": false,        // default false
+        "report_directory": null    // defaults to temp directory
+    }
+    """
+    state = get_state()
+    controller = get_controller()
+    
+    # Parse request
+    try:
+        data = request.get_json() or {}
+        req = RunAllRequest(**data)
+    except Exception as e:
+        return jsonify(RunAllResponse(
             success=False,
             message=f"Invalid request: {e}",
             apx_state=state.apx_state,
@@ -281,102 +402,60 @@ def run_step():
     
     # Check state
     if state.apx_state != APxState.IDLE:
-        return jsonify(RunStepResponse(
+        return jsonify(RunAllResponse(
             success=False,
             message=f"APx not ready. Current state: {state.apx_state.value}",
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 409
     
-    # Run the step
-    result = controller.run_step(
-        sequence=req.sequence,
-        signal=req.signal,
+    # Run all
+    results_by_sp, error, csv_path, pdf_path = controller.run_all_and_export(
         timeout_seconds=req.timeout_seconds,
+        export_csv=req.export_csv,
+        export_pdf=req.export_pdf,
+        report_directory=req.report_directory,
     )
     
-    if result.success:
-        return jsonify(RunStepResponse(
-            success=True,
-            message="Step completed successfully",
-            sequence=result.sequence,
-            signal=result.signal,
-            duration_seconds=result.duration_seconds,
-            apx_state=state.apx_state,
-        ).model_dump(mode="json"))
-    else:
-        return jsonify(RunStepResponse(
+    # Calculate stats
+    signal_paths_run = len(results_by_sp)
+    all_results = [r for results in results_by_sp.values() for r in results]
+    measurements_run = len(all_results)
+    measurements_passed = sum(1 for r in all_results if r.passed)
+    measurements_failed = sum(1 for r in all_results if r.success and not r.passed)
+    total_duration = sum(r.duration_seconds for r in all_results)
+    all_success = all(r.success for r in all_results)
+    all_passed = all(r.passed for r in all_results if r.success)
+    
+    if error:
+        return jsonify(RunAllResponse(
             success=False,
-            message=result.error or "Step failed",
-            sequence=result.sequence,
-            signal=result.signal,
+            message=error,
+            signal_paths_run=signal_paths_run,
+            measurements_run=measurements_run,
+            measurements_passed=measurements_passed,
+            measurements_failed=measurements_failed,
+            total_duration_seconds=total_duration,
+            all_passed=False,
+            csv_report_path=csv_path,
+            pdf_report_path=pdf_path,
+            results_by_signal_path={k: v for k, v in results_by_sp.items()},
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 500
-
-
-@app.route("/get-results", methods=["POST"])
-def get_results():
-    """
-    Get result files from a directory (stub).
     
-    Expects JSON body:
-    {
-        "directory": "C:\\path\\to\\results"
-    }
-    
-    Returns: ZIP file as attachment (not implemented yet)
-    """
-    state = get_state()
-    
-    # Parse request
-    try:
-        data = request.get_json()
-        if data is None:
-            return jsonify({
-                "success": False,
-                "message": "Request body must be JSON",
-            }), 400
-        
-        req = GetResultsRequest(**data)
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "message": f"Invalid request: {e}",
-        }), 400
-    
-    # ==========================================================================
-    # STUB: Zip directory and return
-    # ==========================================================================
-    # TODO: Implement actual zip creation and file return. Example:
-    #
-    # directory = Path(req.directory)
-    # if not directory.exists():
-    #     return jsonify({"success": False, "message": "Directory not found"}), 404
-    #
-    # # Create zip in memory
-    # import io
-    # import zipfile
-    # 
-    # buffer = io.BytesIO()
-    # with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-    #     for file in directory.rglob("*"):
-    #         if file.is_file():
-    #             zf.write(file, file.relative_to(directory))
-    # 
-    # buffer.seek(0)
-    # return send_file(
-    #     buffer,
-    #     mimetype="application/zip",
-    #     as_attachment=True,
-    #     download_name="results.zip",
-    # )
-    # ==========================================================================
-    
-    logger.info(f"STUB: Would zip and return directory: {req.directory}")
-    
-    return jsonify({
-        "success": True,
-        "message": f"STUB: Would return zipped contents of {req.directory}",
-    })
+    return jsonify(RunAllResponse(
+        success=all_success,
+        message=f"All measurements completed. {measurements_passed}/{measurements_run} passed.",
+        signal_paths_run=signal_paths_run,
+        measurements_run=measurements_run,
+        measurements_passed=measurements_passed,
+        measurements_failed=measurements_failed,
+        total_duration_seconds=total_duration,
+        all_passed=all_passed,
+        csv_report_path=csv_path,
+        pdf_report_path=pdf_path,
+        results_by_signal_path={k: v for k, v in results_by_sp.items()},
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
 
 
 @app.route("/shutdown", methods=["POST"])
@@ -411,7 +490,7 @@ def shutdown():
             message="APx shutdown successfully",
             apx_state=state.apx_state,
         ).model_dump(mode="json"))
-        else:
+    else:
         return jsonify(ShutdownResponse(
             success=False,
             message=state.last_error or "Shutdown failed",
@@ -511,14 +590,15 @@ def main():
     # Log server info
     logger.info(f"Server will be available at: http://{args.host}:{args.port}")
     logger.info("Endpoints:")
-    logger.info("  GET  /           - Service information")
-    logger.info("  GET  /health     - Health check")
-    logger.info("  GET  /status     - Detailed status")
-    logger.info("  POST /setup      - Upload project and launch APx")
-    logger.info("  POST /run-step   - Run sequence/signal step")
-    logger.info("  POST /get-results - Get result files (stub)")
-    logger.info("  POST /shutdown   - Shutdown APx")
-    logger.info("  POST /reset      - Kill APx and reset state")
+    logger.info("  GET  /                    - Service information")
+    logger.info("  GET  /health              - Health check")
+    logger.info("  GET  /status              - Detailed status")
+    logger.info("  POST /setup               - Upload project and launch APx")
+    logger.info("  GET  /sequence/structure  - Get signal paths and measurements")
+    logger.info("  POST /run-signal-path     - Run all measurements in a signal path")
+    logger.info("  POST /run-all             - Run all and export reports")
+    logger.info("  POST /shutdown            - Shutdown APx")
+    logger.info("  POST /reset               - Kill APx and reset state")
     logger.info("=" * 60)
     
     # Run Flask app

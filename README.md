@@ -145,16 +145,52 @@ curl -X POST http://windows-host:5000/setup \
 }
 ```
 
-### POST /run-step
+### GET /sequence/structure
 
-Run a sequence/signal step. (Currently a stub - .NET API integration pending)
+Get the structure of the loaded sequence (signal paths and their measurements).
+
+**Response**:
+
+```json
+{
+    "success": true,
+    "message": "Sequence structure retrieved successfully",
+    "signal_paths": [
+        {
+            "index": 0,
+            "name": "Analog Output",
+            "checked": true,
+            "measurements": [
+                {"index": 0, "name": "Level and Gain", "checked": true},
+                {"index": 1, "name": "THD+N", "checked": true},
+                {"index": 2, "name": "Frequency Response", "checked": true}
+            ]
+        },
+        {
+            "index": 1,
+            "name": "Digital Input",
+            "checked": true,
+            "measurements": [
+                {"index": 0, "name": "Level and Gain", "checked": true},
+                {"index": 1, "name": "Crosstalk", "checked": false}
+            ]
+        }
+    ],
+    "total_signal_paths": 2,
+    "total_measurements": 5,
+    "apx_state": "idle"
+}
+```
+
+### POST /run-signal-path
+
+Run all checked measurements in a signal path.
 
 **Request**: JSON
 
 ```json
 {
-    "sequence": "Frequency Response",
-    "signal": "1kHz Sine",
+    "signal_path": "Analog Output",
     "timeout_seconds": 120
 }
 ```
@@ -164,23 +200,60 @@ Run a sequence/signal step. (Currently a stub - .NET API integration pending)
 ```json
 {
     "success": true,
-    "message": "Step completed successfully",
-    "sequence": "Frequency Response",
-    "signal": "1kHz Sine",
-    "duration_seconds": 5.23,
+    "message": "Signal path 'Analog Output' completed. 3/3 passed.",
+    "signal_path": "Analog Output",
+    "measurements_run": 3,
+    "measurements_passed": 3,
+    "measurements_failed": 0,
+    "total_duration_seconds": 15.5,
+    "results": [
+        {
+            "name": "Level and Gain",
+            "success": true,
+            "passed": true,
+            "duration_seconds": 5.2,
+            "meter_values": {"ch1": -0.5, "ch2": -0.4}
+        },
+        ...
+    ],
     "apx_state": "idle"
 }
 ```
 
-### POST /get-results
+### POST /run-all
 
-Get result files from a directory as a ZIP archive. (Currently a stub)
+Run all checked measurements in all checked signal paths and export reports.
 
-**Request**: JSON
+**Request**: JSON (all optional)
 
 ```json
 {
-    "directory": "C:\\APx\\Results\\Run001"
+    "timeout_seconds": 120,
+    "export_csv": true,
+    "export_pdf": false,
+    "report_directory": null
+}
+```
+
+**Response**:
+
+```json
+{
+    "success": true,
+    "message": "All measurements completed. 5/5 passed.",
+    "signal_paths_run": 2,
+    "measurements_run": 5,
+    "measurements_passed": 5,
+    "measurements_failed": 0,
+    "total_duration_seconds": 25.3,
+    "all_passed": true,
+    "csv_report_path": "C:\\Users\\...\\Temp\\apxctrl\\reports\\report_20240115_103000.csv",
+    "pdf_report_path": null,
+    "results_by_signal_path": {
+        "Analog Output": [...],
+        "Digital Input": [...]
+    },
+    "apx_state": "idle"
 }
 ```
 
@@ -265,16 +338,33 @@ with open("project.approjx", "rb") as f:
     )
     print(response.json())
 
-# Run a step
+# Get sequence structure
+response = requests.get(f"{SERVER}/sequence/structure")
+structure = response.json()
+print(f"Signal paths: {structure['total_signal_paths']}")
+print(f"Measurements: {structure['total_measurements']}")
+for sp in structure['signal_paths']:
+    print(f"  {sp['name']}:")
+    for m in sp['measurements']:
+        print(f"    - {m['name']} (checked={m['checked']})")
+
+# Run a specific signal path
 response = requests.post(
-    f"{SERVER}/run-step",
-    json={
-        "sequence": "Frequency Response",
-        "signal": "1kHz Sine",
-        "timeout_seconds": 120
-    }
+    f"{SERVER}/run-signal-path",
+    json={"signal_path": "Analog Output", "timeout_seconds": 120}
 )
-print(response.json())
+result = response.json()
+print(f"Passed: {result['measurements_passed']}/{result['measurements_run']}")
+
+# Or run everything and export reports
+response = requests.post(
+    f"{SERVER}/run-all",
+    json={"export_csv": True, "export_pdf": True}
+)
+result = response.json()
+print(f"All passed: {result['all_passed']}")
+print(f"CSV report: {result['csv_report_path']}")
+print(f"PDF report: {result['pdf_report_path']}")
 
 # Get status
 response = requests.get(f"{SERVER}/status")
@@ -301,8 +391,9 @@ apxctrl/
 
 ### Stubs to Implement
 
-1. **`apx_controller.py:run_step()`**: Actual APx .NET API calls for running sequences
-2. **`main.py:/get-results`**: Zip directory and return as download
+1. **`apx_controller.py:get_sequence_structure()`**: Get actual signal paths/measurements from APx
+2. **`apx_controller.py:run_measurement()`**: Run measurement via APx .NET API, get results
+3. **`apx_controller.py:run_all_and_export()`**: Export reports via `APx.Sequence.Report.ExportText/Pdf()`
 
 ### Production Considerations
 
