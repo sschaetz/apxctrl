@@ -170,6 +170,17 @@ class APxController:
         try:
             self._state.apx_state = APxState.STARTING
             
+            # Verify project file exists and has content
+            resolved_path = project_path.resolve()
+            if not resolved_path.exists():
+                raise FileNotFoundError(f"Project file not found: {resolved_path}")
+            
+            file_size = resolved_path.stat().st_size
+            logger.info(f"Project file verified: {resolved_path} ({file_size} bytes)")
+            
+            if file_size == 0:
+                raise ValueError(f"Project file is empty: {resolved_path}")
+            
             # Initialize CLR if needed
             self._init_clr()
             
@@ -180,19 +191,42 @@ class APxController:
             mode = getattr(APxOperatingMode, apx_mode, APxOperatingMode.SequenceMode)
             
             # Create APx application instance
-            # Following the exact pattern from working code and C# examples
             logger.info(f"Creating APx500_Application with mode={apx_mode}, args={apx_args}")
             self._apx_instance = APx500_Application(mode, apx_args)
             
-            # Set Visible (before OpenProject, matching C# examples)
+            # Set Visible = True first (matching your working code)
             logger.info("Setting Visible = True")
             self._apx_instance.Visible = True
             
+            # Small delay to ensure APx is fully initialized
+            time.sleep(0.5)
+            
             # Open the project - use absolute path as string
-            project_path_str = str(project_path.resolve())
+            project_path_str = str(resolved_path)
             logger.info(f"Opening project: {project_path_str}")
+            logger.info(f"Path repr: {repr(project_path_str)}")
+            
             self._apx_instance.OpenProject(project_path_str)
-            logger.info("OpenProject completed")
+            logger.info("OpenProject call returned")
+            
+            # Wait for project to load
+            time.sleep(0.5)
+            
+            # Verify project loaded by checking Sequence count and names
+            try:
+                sequence = self._apx_instance.Sequence
+                seq_count = sequence.Count
+                logger.info(f"Project loaded - Sequence has {seq_count} signal path(s)")
+                
+                # Log the names of signal paths to verify correct project loaded
+                for i in range(min(seq_count, 5)):  # Log first 5 at most
+                    try:
+                        sp = sequence.GetSignalPath(i)
+                        logger.info(f"  Signal path {i}: '{sp.Name}'")
+                    except Exception as sp_err:
+                        logger.warning(f"  Could not get signal path {i}: {sp_err}")
+            except Exception as e:
+                logger.warning(f"Could not verify project load: {e}")
             
             # Create project info with SHA256
             self._state.project = ProjectInfo.from_file(project_path, project_name)

@@ -208,6 +208,13 @@ def setup():
 
         logger.info(f"Saving project file to: {project_path}")
         file.save(str(project_path))
+        
+        # Verify file was saved correctly
+        saved_size = project_path.stat().st_size
+        logger.info(f"File saved: {saved_size} bytes")
+        
+        if saved_size == 0:
+            raise ValueError("Saved file is empty!")
  
         # Compute SHA256 for logging
         project_info = ProjectInfo.from_file(project_path, project_name)
