@@ -39,11 +39,18 @@ uv python install 3.11.4
 Install dependencies:
 
 ```bash
-cd chromatic/experimental/seb/apxctrl
 uv pip install -e .
 ```
 
 ## Running the Server
+
+Allow access through firewall
+
+```bash
+netsh firewall add portopening TCP 5000 "apxctrl"
+netsh advfirewall firewall add rule name="apxctrl TCP Port 5000" dir=in action=allow protocol=TCP localport=5000
+netsh advfirewall firewall add rule name="apxctrl TCP Port 5000" dir=out action=allow protocol=TCP localport=5000
+```
 
 Basic usage:
 

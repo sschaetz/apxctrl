@@ -24,8 +24,8 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
-# APx500 process name (without .exe)
-APX_PROCESS_NAME = "APx500"
+# APx500 process name (without .exe) - matches Task Manager display
+APX_PROCESS_NAME = "Apx500"
 
 
 class APxController:
@@ -72,27 +72,54 @@ class APxController:
         """
         Kill all running APx500 processes.
         
+        Uses PowerShell to find any process with "APx500" in the name
+        and force-kills them.
+        
         Returns:
             Number of processes killed
         """
         killed = 0
         try:
-            # Use taskkill on Windows to force-kill APx500 processes
-            result = subprocess.run(
-                ["taskkill", "/F", "/IM", f"{APX_PROCESS_NAME}.exe"],
-                capture_output=True,
-                text=True,
-            )
-            # taskkill returns 0 on success, 128 if no processes found
-            if result.returncode == 0:
-                # Count killed processes from output
-                # Output format: "SUCCESS: The process ... has been terminated."
-                killed = result.stdout.count("SUCCESS:")
-                logger.info(f"Killed {killed} existing APx500 process(es)")
-            elif result.returncode == 128:
-                logger.info("No existing APx500 processes to kill")
+            # Use PowerShell to find all processes containing "APx500" in the name
+            # This is more robust than taskkill /IM which requires exact name match
+            find_cmd = [
+                "powershell", "-Command",
+                "Get-Process | Where-Object { $_.ProcessName -like '*APx500*' } | "
+                "Select-Object -ExpandProperty Id"
+            ]
+            result = subprocess.run(find_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.warning(f"PowerShell process search failed: {result.stderr}")
+            
+            # Parse PIDs from output (one per line)
+            pids = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+            
+            if not pids:
+                logger.info("No existing APx500 processes found to kill")
             else:
-                logger.warning(f"taskkill returned {result.returncode}: {result.stderr}")
+                logger.info(f"Found {len(pids)} APx500-related process(es) with PIDs: {pids}")
+                
+                # Kill each process by PID
+                for pid in pids:
+                    try:
+                        kill_result = subprocess.run(
+                            ["taskkill", "/F", "/PID", pid],
+                            capture_output=True,
+                            text=True,
+                        )
+                        if kill_result.returncode == 0:
+                            killed += 1
+                            logger.info(f"Killed process with PID {pid}")
+                        else:
+                            logger.warning(
+                                f"Failed to kill PID {pid}: {kill_result.stderr.strip()}"
+                            )
+                    except Exception as e:
+                        logger.error(f"Error killing PID {pid}: {e}")
+                
+                logger.info(f"Successfully killed {killed} of {len(pids)} APx500 process(es)")
+                
         except Exception as e:
             logger.error(f"Error killing APx500 processes: {e}")
         
