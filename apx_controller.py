@@ -350,15 +350,18 @@ class APxController:
         
         try:
             signal_paths = []
+            sequence = self._apx_instance.Sequence
             
-            # Traverse each signal path in the sequence
-            # APx.Sequence is an IEnumerable<ISignalPath>
-            for sp_idx, signal_path in enumerate(self._apx_instance.Sequence):
+            # Traverse each signal path in the sequence using index-based access
+            # Sequence has Count property and Item(index) indexer
+            for sp_idx in range(sequence.Count):
+                signal_path = sequence.Item(sp_idx)
                 measurements = []
                 
                 # Traverse each measurement in the signal path
-                # ISignalPath is an IEnumerable<ISequenceMeasurement>
-                for m_idx, measurement in enumerate(signal_path):
+                # ISignalPath also has Count and Item(index)
+                for m_idx in range(signal_path.Count):
+                    measurement = signal_path.Item(m_idx)
                     measurements.append(MeasurementInfo(
                         index=m_idx,
                         name=measurement.Name,
