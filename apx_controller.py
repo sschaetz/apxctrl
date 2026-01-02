@@ -183,8 +183,39 @@ class APxController:
             # Create APx application instance
             logger.info(f"Creating APx500_Application with mode={apx_mode}, args={apx_args}")
             self._apx_instance = APx500_Application(mode, apx_args)
+
+            # Log initial visibility state
+            try:
+                initial_visible = self._apx_instance.Visible
+                logger.info(f"Initial Visible state: {initial_visible}")
+            except Exception as e:
+                logger.warning(f"Could not read initial Visible state: {e}")
+
+            # Set Visible AFTER opening project (some APIs require this order)
+            logger.info("Setting Visible = True")
             self._apx_instance.Visible = True
             
+            # Verify visibility was set
+            try:
+                final_visible = self._apx_instance.Visible
+                logger.info(f"Final Visible state: {final_visible}")
+            except Exception as e:
+                logger.warning(f"Could not read final Visible state: {e}")
+
+            # Try to bring window to front if method exists
+            try:
+                if hasattr(self._apx_instance, 'ShowWindow'):
+                    self._apx_instance.ShowWindow()
+                    logger.info("Called ShowWindow()")
+                elif hasattr(self._apx_instance, 'Activate'):
+                    self._apx_instance.Activate()
+                    logger.info("Called Activate()")
+                elif hasattr(self._apx_instance, 'BringToFront'):
+                    self._apx_instance.BringToFront()
+                    logger.info("Called BringToFront()")
+            except Exception as e:
+                logger.warning(f"Could not bring window to front: {e}")
+
             # Try to get the process ID
             try:
                 # The APx API might expose the process ID
