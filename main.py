@@ -195,18 +195,20 @@ def setup():
         logger.info("Shutting down existing APx instance before setup")
         controller.shutdown(force=True)
     
-    # Save file to temp directory
+    # Save file to ~/apxctrl-data/
+    # (APx needs write access to the project directory)
     try:
-        temp_dir = Path(tempfile.gettempdir()) / "apxctrl"
-        temp_dir.mkdir(exist_ok=True)
-        
         # Use original filename or project_name
         safe_filename = file.filename or "project.approjx"
-        project_path = temp_dir / safe_filename
         
+        data_dir = Path.home() / "apxctrl-data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        project_path = data_dir / safe_filename
+
         logger.info(f"Saving project file to: {project_path}")
         file.save(str(project_path))
-        
+ 
         # Compute SHA256 for logging
         project_info = ProjectInfo.from_file(project_path, project_name)
         logger.info(
@@ -214,7 +216,7 @@ def setup():
             f"path={project_info.file_path}, "
             f"sha256={project_info.sha256}"
         )
-        
+ 
     except Exception as e:
         error_msg = f"Failed to save project file: {e}"
         logger.error(error_msg)
