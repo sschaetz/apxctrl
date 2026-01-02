@@ -355,13 +355,14 @@ class APxController:
             # Traverse each signal path in the sequence using index-based access
             # Sequence has Count property and Item(index) indexer
             for sp_idx in range(sequence.Count):
-                signal_path = sequence.Item(sp_idx)
+                logger.info(f"{sp_idx} / {sequence.Count}")
+                signal_path = sequence.GetSignalPath(sp_idx)
                 measurements = []
                 
                 # Traverse each measurement in the signal path
                 # ISignalPath also has Count and Item(index)
                 for m_idx in range(signal_path.Count):
-                    measurement = signal_path.Item(m_idx)
+                    measurement = signal_path.GetMeasurement(m_idx)
                     measurements.append(MeasurementInfo(
                         index=m_idx,
                         name=measurement.Name,
