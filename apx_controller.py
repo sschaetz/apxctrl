@@ -169,7 +169,6 @@ class APxController:
         """
         try:
             self._state.apx_state = APxState.STARTING
-            logger.info(f"Launching APx500 with project: {project_path}")
             
             # Initialize CLR if needed
             self._init_clr()
@@ -181,53 +180,19 @@ class APxController:
             mode = getattr(APxOperatingMode, apx_mode, APxOperatingMode.SequenceMode)
             
             # Create APx application instance
+            # Following the exact pattern from working code and C# examples
             logger.info(f"Creating APx500_Application with mode={apx_mode}, args={apx_args}")
             self._apx_instance = APx500_Application(mode, apx_args)
-
-            # Log initial visibility state
-            try:
-                initial_visible = self._apx_instance.Visible
-                logger.info(f"Initial Visible state: {initial_visible}")
-            except Exception as e:
-                logger.warning(f"Could not read initial Visible state: {e}")
-
-            # Set Visible AFTER opening project (some APIs require this order)
+            
+            # Set Visible (before OpenProject, matching C# examples)
             logger.info("Setting Visible = True")
             self._apx_instance.Visible = True
             
-            # Verify visibility was set
-            try:
-                final_visible = self._apx_instance.Visible
-                logger.info(f"Final Visible state: {final_visible}")
-            except Exception as e:
-                logger.warning(f"Could not read final Visible state: {e}")
-
-            # Try to bring window to front if method exists
-            try:
-                if hasattr(self._apx_instance, 'ShowWindow'):
-                    self._apx_instance.ShowWindow()
-                    logger.info("Called ShowWindow()")
-                elif hasattr(self._apx_instance, 'Activate'):
-                    self._apx_instance.Activate()
-                    logger.info("Called Activate()")
-                elif hasattr(self._apx_instance, 'BringToFront'):
-                    self._apx_instance.BringToFront()
-                    logger.info("Called BringToFront()")
-            except Exception as e:
-                logger.warning(f"Could not bring window to front: {e}")
-
-            # Try to get the process ID
-            try:
-                # The APx API might expose the process ID
-                # If not available, we'll skip this
-                self._state.apx_pid = None  # TODO: Find way to get PID from APx API
-            except Exception:
-                self._state.apx_pid = None
-            
-            # Open the project
+            # Open the project - use absolute path as string
             project_path_str = str(project_path.resolve())
             logger.info(f"Opening project: {project_path_str}")
             self._apx_instance.OpenProject(project_path_str)
+            logger.info("OpenProject completed")
             
             # Create project info with SHA256
             self._state.project = ProjectInfo.from_file(project_path, project_name)
