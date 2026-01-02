@@ -117,6 +117,61 @@ def get_sequence_structure(server: str) -> dict:
     return data
 
 
+def run_signal_path(server: str, signal_path: str, timeout: float = 120.0) -> dict:
+    """Run all checked measurements in a signal path."""
+    print(f"\n{'='*60}")
+    print(f"Running signal path: {signal_path}")
+    print(f"{'='*60}")
+    
+    response = requests.post(
+        f"{server}/run-signal-path",
+        json={"signal_path": signal_path, "timeout_seconds": timeout},
+    )
+    data = response.json()
+    
+    if not data["success"]:
+        print(f"  ✗ Failed: {data['message']}")
+        return data
+    
+    print(f"  ✓ Signal path completed!")
+    print(f"  Measurements run:    {data['measurements_run']}")
+    print(f"  Measurements passed: {data['measurements_passed']}")
+    print(f"  Measurements failed: {data['measurements_failed']}")
+    print(f"  Total duration:      {data['total_duration_seconds']:.2f}s")
+    print()
+    
+    # Print individual results
+    for result in data["results"]:
+        status = "✓ PASS" if result["passed"] else "✗ FAIL"
+        if not result["success"]:
+            status = "⚠ ERROR"
+        
+        print(f"  [{status}] {result['name']} ({result['duration_seconds']:.2f}s)")
+        
+        if result.get("meter_values"):
+            lower_limits = result.get("lower_limits") or {}
+            upper_limits = result.get("upper_limits") or {}
+            
+            for ch, val in result["meter_values"].items():
+                lower = lower_limits.get(ch)
+                upper = upper_limits.get(ch)
+                
+                # Format with limits if available
+                if lower is not None and upper is not None:
+                    print(f"           {ch}: {lower:.2f} <= {val:.2f} <= {upper:.2f}")
+                elif lower is not None:
+                    print(f"           {ch}: {lower:.2f} <= {val:.2f}")
+                elif upper is not None:
+                    print(f"           {ch}: {val:.2f} <= {upper:.2f}")
+                else:
+                    print(f"           {ch}: {val:.2f}")
+        
+        if result.get("error"):
+            print(f"           Error: {result['error']}")
+    
+    return data
+
+
 def shutdown_server(server: str, force: bool = False) -> dict:
     """Shutdown APx gracefully."""
     print(f"\n{'='*60}")
@@ -173,6 +228,17 @@ def main():
         action="store_true",
         help="Force shutdown (with --shutdown)",
     )
+    parser.add_argument(
+        "--run-signal-path",
+        metavar="NAME",
+        help="Run all checked measurements in the named signal path",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=120.0,
+        help="Timeout per measurement in seconds (default: 120)",
+    )
     args = parser.parse_args()
     
     # Check server health first
@@ -216,7 +282,11 @@ def main():
     
     # Get sequence structure if APx is running
     if status["apx_state"] == "idle" or (args.project and setup_result.get("success")):
-        get_sequence_structure(args.server)
+        structure = get_sequence_structure(args.server)
+        
+        # Run signal path if requested
+        if args.run_signal_path:
+            run_signal_path(args.server, args.run_signal_path, args.timeout)
     else:
         print("\n  Skipping sequence structure (APx not in idle state)")
         print("  Use --project to upload a project first")

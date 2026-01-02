@@ -194,6 +194,8 @@ class MeasurementResult(BaseModel):
     duration_seconds: float
     error: Optional[str] = None
     meter_values: Optional[dict] = None  # channel -> value
+    lower_limits: Optional[dict] = None  # channel -> lower limit
+    upper_limits: Optional[dict] = None  # channel -> upper limit
 
 
 class RunSignalPathResponse(BaseModel):

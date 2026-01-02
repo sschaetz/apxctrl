@@ -426,6 +426,8 @@ class APxController:
             # Get results
             passed = True
             meter_values = {}
+            lower_limits = {}
+            upper_limits = {}
             
             if measurement.HasSequenceResults:
                 seq_results = measurement.SequenceResults
@@ -450,12 +452,37 @@ class APxController:
                         f"  Result {r_idx}: upper={upper_passed}, lower={lower_passed}"
                     )
                     
-                    # Get meter values if available
+                    # Get meter values and limits if available
                     if result.HasMeterValues:
                         values = result.GetMeterValues()
                         for i in range(len(values)):
                             meter_values[f"ch{i+1}"] = values[i]
+                        
+                        # Get lower limits
+                        try:
+                            lower_vals = result.GetMeterLowerLimitValues()
+                            for i in range(len(lower_vals)):
+                                # NaN means no limit defined
+                                if not (lower_vals[i] != lower_vals[i]):  # Check for NaN
+                                    lower_limits[f"ch{i+1}"] = lower_vals[i]
+                        except Exception as e:
+                            logger.debug(f"Could not get lower limits: {e}")
+                        
+                        # Get upper limits
+                        try:
+                            upper_vals = result.GetMeterUpperLimitValues()
+                            for i in range(len(upper_vals)):
+                                # NaN means no limit defined
+                                if not (upper_vals[i] != upper_vals[i]):  # Check for NaN
+                                    upper_limits[f"ch{i+1}"] = upper_vals[i]
+                        except Exception as e:
+                            logger.debug(f"Could not get upper limits: {e}")
+                        
                         logger.info(f"  Meter values: {meter_values}")
+                        if lower_limits:
+                            logger.info(f"  Lower limits: {lower_limits}")
+                        if upper_limits:
+                            logger.info(f"  Upper limits: {upper_limits}")
             else:
                 logger.warning("Measurement has no sequence results")
                 passed = False
@@ -474,7 +501,9 @@ class APxController:
                 success=True,
                 passed=passed,
                 duration_seconds=duration,
-                meter_values=meter_values,
+                meter_values=meter_values if meter_values else None,
+                lower_limits=lower_limits if lower_limits else None,
+                upper_limits=upper_limits if upper_limits else None,
             )
             
         except Exception as e:
