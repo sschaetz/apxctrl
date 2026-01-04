@@ -157,14 +157,16 @@ def run_signal_path(server: str, signal_path: str, timeout: float = 120.0) -> di
                 upper = upper_limits.get(ch)
                 
                 # Format with limits if available
-                if lower is not None and upper is not None:
+                if lower is not None and upper is not None and val is not None:
                     print(f"           {ch}: {lower:.2f} <= {val:.2f} <= {upper:.2f}")
-                elif lower is not None:
+                elif lower is not None and val is not None:
                     print(f"           {ch}: {lower:.2f} <= {val:.2f}")
-                elif upper is not None:
+                elif upper is not None and val is not None:
                     print(f"           {ch}: {val:.2f} <= {upper:.2f}")
-                else:
+                elif val is not None:
                     print(f"           {ch}: {val:.2f}")
+                else:
+                    print(f"           {ch}: None")
         
         if result.get("error"):
             print(f"           Error: {result['error']}")
