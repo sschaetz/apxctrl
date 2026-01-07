@@ -3,7 +3,19 @@
 Example client for APx Control Server.
 
 Usage:
+    # Upload project and show structure
     python client_example.py --server http://windows-host:5000 --project /path/to/project.approjx
+    
+    # List available sequences
+    python client_example.py --server http://windows-host:5000 --list-sequences
+    
+    # Run a sequence with device ID
+    python client_example.py --server http://windows-host:5000 --run-sequence "Production Test" --device-id "DUT-001"
+    
+    # Run a signal path
+    python client_example.py --server http://windows-host:5000 --run-signal-path "Signal Path1"
+    
+    # Reset server
     python client_example.py --server http://windows-host:5000 --reset
 """
 from __future__ import annotations
@@ -174,6 +186,58 @@ def run_signal_path(server: str, signal_path: str, timeout: float = 120.0) -> di
     return data
 
 
+def list_sequences(server: str) -> dict:
+    """List available sequences in the project."""
+    print(f"\n{'='*60}")
+    print("Listing sequences...")
+    print(f"{'='*60}")
+    
+    response = requests.get(f"{server}/sequences")
+    data = response.json()
+    
+    if not data["success"]:
+        print(f"  ✗ Failed: {data['message']}")
+        return data
+    
+    print(f"  Found {len(data['sequences'])} sequence(s)")
+    if data.get("active_sequence"):
+        print(f"  Active: {data['active_sequence']}")
+    print()
+    
+    for seq in data["sequences"]:
+        active = " (active)" if seq["name"] == data.get("active_sequence") else ""
+        print(f"  [{seq['index']}] {seq['name']}{active}")
+    
+    return data
+
+
+def run_sequence(server: str, sequence_name: str, device_id: str = "") -> dict:
+    """Run a sequence."""
+    print(f"\n{'='*60}")
+    print(f"Running sequence: {sequence_name}")
+    if device_id:
+        print(f"Device ID: {device_id}")
+    print(f"{'='*60}")
+    
+    response = requests.post(
+        f"{server}/run-sequence",
+        json={"sequence_name": sequence_name, "device_id": device_id},
+    )
+    data = response.json()
+    
+    if not data["success"]:
+        print(f"  ✗ Failed: {data['message']}")
+        return data
+    
+    status = "✓ PASSED" if data["passed"] else "✗ FAILED"
+    print(f"  {status}")
+    print(f"  Sequence:  {data['sequence_name']}")
+    print(f"  Device ID: {data['device_id'] or '(none)'}")
+    print(f"  Duration:  {data['duration_seconds']:.2f}s")
+    
+    return data
+
+
 def shutdown_server(server: str, force: bool = False) -> dict:
     """Shutdown APx gracefully."""
     print(f"\n{'='*60}")
@@ -241,6 +305,21 @@ def main():
         default=120.0,
         help="Timeout per measurement in seconds (default: 120)",
     )
+    parser.add_argument(
+        "--list-sequences",
+        action="store_true",
+        help="List available sequences in the project",
+    )
+    parser.add_argument(
+        "--run-sequence",
+        metavar="NAME",
+        help="Run the named sequence",
+    )
+    parser.add_argument(
+        "--device-id",
+        default="",
+        help="Device ID to associate with sequence run (default: empty)",
+    )
     args = parser.parse_args()
     
     # Check server health first
@@ -285,6 +364,14 @@ def main():
     # Get sequence structure if APx is running
     if status["apx_state"] == "idle" or (args.project and setup_result.get("success")):
         structure = get_sequence_structure(args.server)
+        
+        # List sequences if requested
+        if args.list_sequences:
+            list_sequences(args.server)
+        
+        # Run sequence if requested
+        if args.run_sequence:
+            run_sequence(args.server, args.run_sequence, args.device_id)
         
         # Run signal path if requested
         if args.run_signal_path:
