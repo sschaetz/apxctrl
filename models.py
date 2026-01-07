@@ -251,3 +251,42 @@ class RunAllResponse(BaseModel):
     pdf_report_path: Optional[str] = None
     results_by_signal_path: dict[str, list[MeasurementResult]] = {}
     apx_state: APxState
+
+
+# ============================================================================
+# Run Sequence Models
+# ============================================================================
+
+class SequenceInfo(BaseModel):
+    """Information about an available sequence."""
+    index: int
+    name: str
+
+
+class RunSequenceRequest(BaseModel):
+    """Request for running a sequence."""
+    sequence_name: str = Field(..., description="Name of the sequence to run")
+    device_id: str = Field(
+        default="",
+        description="Device ID to associate with the test run"
+    )
+
+
+class RunSequenceResponse(BaseModel):
+    """Response for running a sequence."""
+    success: bool
+    message: str
+    sequence_name: str
+    device_id: str
+    passed: bool = False
+    duration_seconds: float = 0.0
+    apx_state: APxState
+
+
+class ListSequencesResponse(BaseModel):
+    """Response containing available sequences."""
+    success: bool
+    message: str
+    sequences: list[SequenceInfo] = []
+    active_sequence: Optional[str] = None
+    apx_state: APxState

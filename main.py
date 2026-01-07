@@ -22,10 +22,13 @@ from apx_controller import APxController
 from models import (
     APxState,
     HealthResponse,
+    ListSequencesResponse,
     ProjectInfo,
     ResetResponse,
     RunAllRequest,
     RunAllResponse,
+    RunSequenceRequest,
+    RunSequenceResponse,
     RunSignalPathRequest,
     RunSignalPathResponse,
     SequenceStructureResponse,
@@ -78,13 +81,15 @@ def index():
     """Service information and available endpoints."""
     return jsonify({
         "service": "APx Control Server",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "endpoints": {
             "GET /": "Service information",
             "GET /health": "Quick health check",
             "GET /status": "Detailed status",
             "POST /setup": "Upload project and launch APx",
             "GET /sequence/structure": "Get sequence structure (signal paths and measurements)",
+            "GET /sequences": "List available sequences",
+            "POST /run-sequence": "Activate and run a sequence",
             "POST /run-signal-path": "Run all measurements in a signal path",
             "POST /run-all": "Run all measurements and export reports",
             "POST /shutdown": "Shutdown APx gracefully",
@@ -382,6 +387,117 @@ def run_signal_path():
     ).model_dump(mode="json"))
 
 
+@app.route("/sequences", methods=["GET"])
+def list_sequences():
+    """
+    List available sequences in the project.
+    
+    Returns the list of sequences and which one is currently active.
+    """
+    state = get_state()
+    controller = get_controller()
+    
+    # Check state
+    if state.apx_state == APxState.NOT_RUNNING:
+        return jsonify(ListSequencesResponse(
+            success=False,
+            message="APx not running. Call /setup first.",
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 409
+    
+    # Get sequences
+    sequences, active_sequence, error = controller.list_sequences()
+    
+    if error:
+        return jsonify(ListSequencesResponse(
+            success=False,
+            message=error,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+    
+    return jsonify(ListSequencesResponse(
+        success=True,
+        message=f"Found {len(sequences)} sequence(s)",
+        sequences=sequences,
+        active_sequence=active_sequence,
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
+
+
+@app.route("/run-sequence", methods=["POST"])
+def run_sequence():
+    """
+    Activate and run a sequence.
+    
+    Expects JSON body:
+    {
+        "sequence_name": "My Sequence",
+        "device_id": "DUT-12345"  // optional, default ""
+    }
+    """
+    state = get_state()
+    controller = get_controller()
+    
+    # Parse request
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify(RunSequenceResponse(
+                success=False,
+                message="Request body must be JSON",
+                sequence_name="",
+                device_id="",
+                apx_state=state.apx_state,
+            ).model_dump(mode="json")), 400
+        
+        req = RunSequenceRequest(**data)
+    except Exception as e:
+        return jsonify(RunSequenceResponse(
+            success=False,
+            message=f"Invalid request: {e}",
+            sequence_name="",
+            device_id="",
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 400
+    
+    # Check state
+    if state.apx_state != APxState.IDLE:
+        return jsonify(RunSequenceResponse(
+            success=False,
+            message=f"APx not ready. Current state: {state.apx_state.value}",
+            sequence_name=req.sequence_name,
+            device_id=req.device_id,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 409
+    
+    # Run sequence
+    passed, duration, error = controller.run_sequence(
+        sequence_name=req.sequence_name,
+        device_id=req.device_id,
+    )
+    
+    if error:
+        return jsonify(RunSequenceResponse(
+            success=False,
+            message=error,
+            sequence_name=req.sequence_name,
+            device_id=req.device_id,
+            passed=False,
+            duration_seconds=duration,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+    
+    return jsonify(RunSequenceResponse(
+        success=True,
+        message=f"Sequence '{req.sequence_name}' completed. {'PASSED' if passed else 'FAILED'}",
+        sequence_name=req.sequence_name,
+        device_id=req.device_id,
+        passed=passed,
+        duration_seconds=duration,
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
+
+
 @app.route("/run-all", methods=["POST"])
 def run_all():
     """
@@ -604,6 +720,8 @@ def main():
     logger.info("  GET  /status              - Detailed status")
     logger.info("  POST /setup               - Upload project and launch APx")
     logger.info("  GET  /sequence/structure  - Get signal paths and measurements")
+    logger.info("  GET  /sequences           - List available sequences")
+    logger.info("  POST /run-sequence        - Activate and run a sequence")
     logger.info("  POST /run-signal-path     - Run all measurements in a signal path")
     logger.info("  POST /run-all             - Run all and export reports")
     logger.info("  POST /shutdown            - Shutdown APx")

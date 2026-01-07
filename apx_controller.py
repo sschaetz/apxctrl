@@ -18,6 +18,7 @@ from models import (
     MeasurementInfo,
     MeasurementResult,
     ProjectInfo,
+    SequenceInfo,
     ServerState,
     SignalPathInfo,
 )
@@ -677,3 +678,102 @@ class APxController:
             logger.error(error_msg)
             return results_by_signal_path, error_msg, csv_path, pdf_path
 
+    def list_sequences(self) -> tuple[list[SequenceInfo], Optional[str], Optional[str]]:
+        """
+        List available sequences in the project.
+        
+        Returns:
+            Tuple of (list of SequenceInfo, active sequence name or None, error message or None)
+        """
+        if self._apx_instance is None:
+            return [], None, "APx instance not initialized"
+        
+        if self._state.apx_state == APxState.NOT_RUNNING:
+            return [], None, "APx not running"
+        
+        try:
+            sequences_collection = self._apx_instance.Sequence.Sequences
+            seq_count = sequences_collection.Count
+            logger.info(f"Found {seq_count} sequence(s)")
+            
+            sequences = []
+            active_sequence = None
+            
+            for i in range(seq_count):
+                seq = sequences_collection.Item(i)
+                seq_name = seq.Name
+                sequences.append(SequenceInfo(
+                    index=i,
+                    name=seq_name,
+                ))
+                logger.info(f"  Sequence {i}: '{seq_name}'")
+            
+            # Try to get active sequence name
+            try:
+                active_sequence = self._apx_instance.Sequence.ActiveSequence.Name
+                logger.info(f"Active sequence: '{active_sequence}'")
+            except Exception as e:
+                logger.debug(f"Could not get active sequence: {e}")
+            
+            return sequences, active_sequence, None
+            
+        except Exception as e:
+            error_msg = f"Error listing sequences: {e}"
+            logger.error(error_msg)
+            return [], None, error_msg
+
+    def run_sequence(
+        self,
+        sequence_name: str,
+        device_id: str = "",
+    ) -> tuple[bool, float, Optional[str]]:
+        """
+        Activate and run a sequence.
+        
+        Args:
+            sequence_name: Name of the sequence to run
+            device_id: Device ID to associate with the test run
+            
+        Returns:
+            Tuple of (passed, duration_seconds, error message or None)
+        """
+        if self._apx_instance is None:
+            return False, 0.0, "APx instance not initialized"
+        
+        if self._state.apx_state != APxState.IDLE:
+            return False, 0.0, f"APx not in IDLE state (current: {self._state.apx_state.value})"
+        
+        started_at = datetime.now()
+        
+        try:
+            self._state.apx_state = APxState.RUNNING_STEP
+            
+            # Activate the sequence by name
+            logger.info(f"Activating sequence: '{sequence_name}'")
+            sequences_collection = self._apx_instance.Sequence.Sequences
+            sequences_collection.Activate(sequence_name)
+            logger.info(f"Sequence '{sequence_name}' activated")
+            
+            # Run the sequence with device ID
+            logger.info(f"Running sequence with device_id: '{device_id}'")
+            self._apx_instance.Sequence.Run(device_id)
+            logger.info("Sequence.Run() completed")
+            
+            # Check if passed
+            passed = self._apx_instance.Sequence.Passed
+            logger.info(f"Sequence passed: {passed}")
+            
+            self._state.apx_state = APxState.IDLE
+            duration = (datetime.now() - started_at).total_seconds()
+            
+            return passed, duration, None
+            
+        except Exception as e:
+            error_msg = f"Error running sequence: {e}"
+            logger.error(error_msg)
+            self._state.apx_state = APxState.ERROR
+            self._state.last_error = error_msg
+            self._state.last_error_at = datetime.now()
+            
+            duration = (datetime.now() - started_at).total_seconds()
+            return False, duration, error_msg
