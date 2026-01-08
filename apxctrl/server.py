@@ -16,8 +16,8 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_file
 
-from apx_controller import APxController
-from models import (
+from apxctrl.controller import APxController
+from apxctrl.model import (
     APxState,
     GetResultRequest,
     GetResultResponse,

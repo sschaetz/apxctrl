@@ -12,36 +12,36 @@ class TestImports:
 
     def test_import_models(self):
         """Test that models.py can be imported."""
-        import models
+        import apxctrl.model
         
         # Verify key classes exist
-        assert hasattr(models, "APxState")
-        assert hasattr(models, "ServerState")
-        assert hasattr(models, "ProjectInfo")
-        assert hasattr(models, "SequenceInfo")
-        assert hasattr(models, "SignalPathInfo")
-        assert hasattr(models, "MeasurementInfo")
-        assert hasattr(models, "ListResponse")
-        assert hasattr(models, "RunSequenceRequest")
-        assert hasattr(models, "RunSequenceResponse")
-        assert hasattr(models, "GetResultRequest")
-        assert hasattr(models, "GetResultResponse")
+        assert hasattr(apxctrl.model, "APxState")
+        assert hasattr(apxctrl.model, "ServerState")
+        assert hasattr(apxctrl.model, "ProjectInfo")
+        assert hasattr(apxctrl.model, "SequenceInfo")
+        assert hasattr(apxctrl.model, "SignalPathInfo")
+        assert hasattr(apxctrl.model, "MeasurementInfo")
+        assert hasattr(apxctrl.model, "ListResponse")
+        assert hasattr(apxctrl.model, "RunSequenceRequest")
+        assert hasattr(apxctrl.model, "RunSequenceResponse")
+        assert hasattr(apxctrl.model, "GetResultRequest")
+        assert hasattr(apxctrl.model, "GetResultResponse")
 
-    def test_import_apx_controller(self):
-        """Test that apx_controller.py can be imported."""
-        import apx_controller
+    def test_import_controller(self):
+        """Test that controller.py can be imported."""
+        import apxctrl.controller
         
         # Verify key classes exist
-        assert hasattr(apx_controller, "APxController")
+        assert hasattr(apxctrl.controller, "APxController")
 
     def test_import_main(self):
         """Test that main.py can be imported."""
-        import main
+        import apxctrl.server
         
         # Verify Flask app exists
-        assert hasattr(main, "app")
-        assert hasattr(main, "get_state")
-        assert hasattr(main, "get_controller")
+        assert hasattr(apxctrl.server, "app")
+        assert hasattr(apxctrl.server, "get_state")
+        assert hasattr(apxctrl.server, "get_controller")
 
 
 class TestModels:
@@ -49,7 +49,7 @@ class TestModels:
 
     def test_apx_state_enum(self):
         """Test APxState enum values."""
-        from models import APxState
+        from apxctrl.model import APxState
         
         assert APxState.NOT_RUNNING.value == "not_running"
         assert APxState.STARTING.value == "starting"
@@ -59,7 +59,7 @@ class TestModels:
 
     def test_server_state_defaults(self):
         """Test ServerState default values."""
-        from models import APxState, ServerState
+        from apxctrl.model import APxState, ServerState
         
         state = ServerState()
         assert state.apx_state == APxState.NOT_RUNNING
@@ -69,7 +69,7 @@ class TestModels:
 
     def test_measurement_info(self):
         """Test MeasurementInfo model."""
-        from models import MeasurementInfo
+        from apxctrl.model import MeasurementInfo
         
         m = MeasurementInfo(index=0, name="Test Measurement", checked=True)
         assert m.index == 0
@@ -78,7 +78,7 @@ class TestModels:
 
     def test_signal_path_info(self):
         """Test SignalPathInfo model."""
-        from models import MeasurementInfo, SignalPathInfo
+        from apxctrl.model import MeasurementInfo, SignalPathInfo
         
         sp = SignalPathInfo(
             index=0,
@@ -95,7 +95,7 @@ class TestModels:
 
     def test_sequence_info(self):
         """Test SequenceInfo model."""
-        from models import MeasurementInfo, SequenceInfo, SignalPathInfo
+        from apxctrl.model import MeasurementInfo, SequenceInfo, SignalPathInfo
         
         seq = SequenceInfo(
             index=0,
@@ -115,7 +115,7 @@ class TestModels:
 
     def test_list_response(self):
         """Test ListResponse model."""
-        from models import APxState, ListResponse
+        from apxctrl.model import APxState, ListResponse
         
         resp = ListResponse(
             success=True,
@@ -130,7 +130,7 @@ class TestModels:
 
     def test_run_sequence_request(self):
         """Test RunSequenceRequest model."""
-        from models import RunSequenceRequest
+        from apxctrl.model import RunSequenceRequest
         
         req = RunSequenceRequest(sequence_name="My Sequence", test_run_id="TR-001")
         assert req.sequence_name == "My Sequence"
@@ -138,7 +138,7 @@ class TestModels:
 
     def test_run_sequence_response(self):
         """Test RunSequenceResponse model."""
-        from models import APxState, RunSequenceResponse
+        from apxctrl.model import APxState, RunSequenceResponse
         
         resp = RunSequenceResponse(
             success=True,
@@ -154,7 +154,7 @@ class TestModels:
 
     def test_get_result_request(self):
         """Test GetResultRequest model."""
-        from models import GetResultRequest
+        from apxctrl.model import GetResultRequest
         
         req = GetResultRequest(
             test_run_id="TR-001",
@@ -165,7 +165,7 @@ class TestModels:
 
     def test_get_result_response(self):
         """Test GetResultResponse model."""
-        from models import GetResultResponse
+        from apxctrl.model import GetResultResponse
         
         resp = GetResultResponse(
             success=True,
@@ -183,8 +183,8 @@ class TestController:
 
     def test_controller_init(self):
         """Test APxController initialization."""
-        from apx_controller import APxController
-        from models import APxState, ServerState
+        from apxctrl.controller import APxController
+        from apxctrl.model import APxState, ServerState
         
         state = ServerState()
         controller = APxController(state)
@@ -195,8 +195,8 @@ class TestController:
 
     def test_controller_check_health_not_running(self):
         """Test check_health when APx is not running."""
-        from apx_controller import APxController
-        from models import APxState, ServerState
+        from apxctrl.controller import APxController
+        from apxctrl.model import APxState, ServerState
         
         state = ServerState()
         state.apx_state = APxState.NOT_RUNNING
@@ -207,8 +207,8 @@ class TestController:
 
     def test_controller_list_structure_not_initialized(self):
         """Test list_structure when APx is not initialized."""
-        from apx_controller import APxController
-        from models import ServerState
+        from apxctrl.controller import APxController
+        from apxctrl.model import ServerState
         
         state = ServerState()
         controller = APxController(state)
@@ -220,8 +220,8 @@ class TestController:
 
     def test_controller_run_sequence_not_initialized(self):
         """Test run_sequence when APx is not initialized."""
-        from apx_controller import APxController
-        from models import ServerState
+        from apxctrl.controller import APxController
+        from apxctrl.model import ServerState
         
         state = ServerState()
         controller = APxController(state)
@@ -238,9 +238,9 @@ class TestFlaskApp:
     @pytest.fixture
     def client(self):
         """Create a test client."""
-        import main
-        main.app.config["TESTING"] = True
-        with main.app.test_client() as client:
+        import apxctrl.server
+        apxctrl.server.app.config["TESTING"] = True
+        with apxctrl.server.app.test_client() as client:
             yield client
 
     def test_index(self, client):

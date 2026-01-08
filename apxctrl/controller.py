@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from models import (
+from apxctrl.model import (
     APxState,
     MeasurementInfo,
     ProjectInfo,
