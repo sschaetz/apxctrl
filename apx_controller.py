@@ -336,7 +336,7 @@ class APxController:
             try:
                 active_sequence = self._apx_instance.Sequence.ActiveSequence.Name
                 logger.info(f"Active sequence: '{active_sequence}'")
-        except Exception as e:
+            except Exception as e:
                 logger.debug(f"Could not get active sequence: {e}")
             
             # Iterate through sequences

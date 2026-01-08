@@ -38,6 +38,12 @@ Install dependencies:
 uv pip install -e .
 ```
 
+## Running tests
+
+```bash
+uv run py.test -v
+```
+
 ## Running the Server
 
 Allow access through firewall

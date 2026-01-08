@@ -10,5 +10,11 @@ dependencies = [
     "pythonnet>=3.0.5",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "requests>=2.31.0",
+]
+
 [project.scripts]
 apxctrl = "main:main"
