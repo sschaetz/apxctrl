@@ -14,11 +14,13 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 
 from apx_controller import APxController
 from models import (
     APxState,
+    GetResultRequest,
+    GetResultResponse,
     HealthResponse,
     ListResponse,
     ProjectInfo,
@@ -82,6 +84,7 @@ def index():
             "POST /setup": "Upload project and launch APx",
             "GET /list": "List sequences, signal paths, and measurements",
             "POST /run-sequence": "Activate and run a sequence",
+            "POST /get-result": "Download test results as zip",
             "POST /shutdown": "Shutdown APx gracefully",
             "POST /reset": "Kill APx and reset state",
         },
@@ -308,7 +311,7 @@ def run_sequence():
     Expects JSON body:
     {
         "sequence_name": "My Sequence",
-        "device_id": "DUT-12345"  // optional, default ""
+        "test_run_id": "TR-12345"  // optional, default ""
     }
     """
     state = get_state()
@@ -322,7 +325,7 @@ def run_sequence():
                 success=False,
                 message="Request body must be JSON",
                 sequence_name="",
-                device_id="",
+                test_run_id="",
                 apx_state=state.apx_state,
             ).model_dump(mode="json")), 400
         
@@ -332,7 +335,7 @@ def run_sequence():
             success=False,
             message=f"Invalid request: {e}",
             sequence_name="",
-            device_id="",
+            test_run_id="",
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 400
     
@@ -342,14 +345,14 @@ def run_sequence():
             success=False,
             message=f"APx not ready. Current state: {state.apx_state.value}",
             sequence_name=req.sequence_name,
-            device_id=req.device_id,
+            test_run_id=req.test_run_id,
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 409
     
-    # Run sequence
+    # Run sequence (test_run_id is passed to APx as device_id)
     passed, duration, error = controller.run_sequence(
         sequence_name=req.sequence_name,
-        device_id=req.device_id,
+        test_run_id=req.test_run_id,
     )
     
     if error:
@@ -357,7 +360,7 @@ def run_sequence():
             success=False,
             message=error,
             sequence_name=req.sequence_name,
-            device_id=req.device_id,
+            test_run_id=req.test_run_id,
             passed=False,
             duration_seconds=duration,
             apx_state=state.apx_state,
@@ -367,11 +370,67 @@ def run_sequence():
         success=True,
         message=f"Sequence '{req.sequence_name}' completed. {'PASSED' if passed else 'FAILED'}",
         sequence_name=req.sequence_name,
-        device_id=req.device_id,
+        test_run_id=req.test_run_id,
         passed=passed,
         duration_seconds=duration,
         apx_state=state.apx_state,
     ).model_dump(mode="json"))
+
+
+@app.route("/get-result", methods=["POST"])
+def get_result():
+    """
+    Download test results as a zip file.
+    
+    Expects JSON body:
+    {
+        "test_run_id": "TR-12345",
+        "results_path": "C:\\Users\\user\\Documents\\output"
+    }
+    
+    Searches for a directory matching <test_run_id>* in results_path,
+    compresses it, and returns the zip file.
+    """
+    controller = get_controller()
+    
+    # Parse request
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify(GetResultResponse(
+                success=False,
+                message="Request body must be JSON",
+                test_run_id="",
+            ).model_dump(mode="json")), 400
+        
+        req = GetResultRequest(**data)
+    except Exception as e:
+        return jsonify(GetResultResponse(
+            success=False,
+            message=f"Invalid request: {e}",
+            test_run_id="",
+        ).model_dump(mode="json")), 400
+    
+    # Get result
+    zip_path, found_dir, error = controller.get_result(
+        test_run_id=req.test_run_id,
+        results_path=req.results_path,
+    )
+    
+    if error:
+        return jsonify(GetResultResponse(
+            success=False,
+            message=error,
+            test_run_id=req.test_run_id,
+        ).model_dump(mode="json")), 404
+    
+    # Send the zip file
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=zip_path.name,
+    )
 
 
 @app.route("/shutdown", methods=["POST"])
@@ -512,6 +571,7 @@ def main():
     logger.info("  POST /setup         - Upload project and launch APx")
     logger.info("  GET  /list          - List sequences, signal paths, measurements")
     logger.info("  POST /run-sequence  - Activate and run a sequence")
+    logger.info("  POST /get-result    - Download test results as zip")
     logger.info("  POST /shutdown      - Shutdown APx")
     logger.info("  POST /reset         - Kill APx and reset state")
     logger.info("=" * 60)

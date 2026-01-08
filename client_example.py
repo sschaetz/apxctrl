@@ -9,8 +9,11 @@ Usage:
     # List project structure (sequences -> signal paths -> measurements)
     python client_example.py --server http://windows-host:5000 --list
     
-    # Run a sequence with device ID
-    python client_example.py --server http://windows-host:5000 --run-sequence "Production Test" --device-id "DUT-001"
+    # Run a sequence with test run ID
+    python client_example.py --server http://windows-host:5000 --run-sequence "Production Test" --test-run-id "TR-001"
+    
+    # Download test results
+    python client_example.py --server http://windows-host:5000 --get-result "TR-001" --results-path "C:\\Users\\user\\output" --output ./results.zip
     
     # Reset server
     python client_example.py --server http://windows-host:5000 --reset
@@ -132,17 +135,17 @@ def list_structure(server: str) -> dict:
     return data
 
 
-def run_sequence(server: str, sequence_name: str, device_id: str = "") -> dict:
+def run_sequence(server: str, sequence_name: str, test_run_id: str = "") -> dict:
     """Run a sequence."""
     print(f"\n{'='*60}")
     print(f"Running sequence: {sequence_name}")
-    if device_id:
-        print(f"Device ID: {device_id}")
+    if test_run_id:
+        print(f"Test Run ID: {test_run_id}")
     print(f"{'='*60}")
     
     response = requests.post(
         f"{server}/run-sequence",
-        json={"sequence_name": sequence_name, "device_id": device_id},
+        json={"sequence_name": sequence_name, "test_run_id": test_run_id},
     )
     data = response.json()
     
@@ -152,11 +155,50 @@ def run_sequence(server: str, sequence_name: str, device_id: str = "") -> dict:
     
     status = "✓ PASSED" if data["passed"] else "✗ FAILED"
     print(f"  {status}")
-    print(f"  Sequence:  {data['sequence_name']}")
-    print(f"  Device ID: {data['device_id'] or '(none)'}")
-    print(f"  Duration:  {data['duration_seconds']:.2f}s")
+    print(f"  Sequence:    {data['sequence_name']}")
+    print(f"  Test Run ID: {data['test_run_id'] or '(none)'}")
+    print(f"  Duration:    {data['duration_seconds']:.2f}s")
     
     return data
+
+
+def get_result(server: str, test_run_id: str, results_path: str, output_path: Path) -> bool:
+    """Download test results as a zip file."""
+    print(f"\n{'='*60}")
+    print(f"Getting results for: {test_run_id}")
+    print(f"Searching in: {results_path}")
+    print(f"{'='*60}")
+    
+    response = requests.post(
+        f"{server}/get-result",
+        json={"test_run_id": test_run_id, "results_path": results_path},
+        stream=True,
+    )
+    
+    # Check if we got a JSON error response
+    content_type = response.headers.get("Content-Type", "")
+    if "application/json" in content_type:
+        data = response.json()
+        print(f"  ✗ Failed: {data['message']}")
+        return False
+    
+    # Check if we got a zip file
+    if response.status_code != 200:
+        print(f"  ✗ Failed: HTTP {response.status_code}")
+        return False
+    
+    # Save the zip file
+    total_size = 0
+    with open(output_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+            total_size += len(chunk)
+    
+    size_mb = total_size / (1024 * 1024)
+    print(f"  ✓ Downloaded: {output_path}")
+    print(f"  Size: {size_mb:.2f} MB")
+    
+    return True
 
 
 def shutdown_server(server: str, force: bool = False) -> dict:
@@ -226,9 +268,25 @@ def main():
         help="Run the named sequence",
     )
     parser.add_argument(
-        "--device-id",
+        "--test-run-id",
         default="",
-        help="Device ID to associate with sequence run (default: empty)",
+        help="Test run ID to associate with sequence run (default: empty)",
+    )
+    parser.add_argument(
+        "--get-result",
+        metavar="TEST_RUN_ID",
+        help="Download results for the given test run ID",
+    )
+    parser.add_argument(
+        "--results-path",
+        default="",
+        help="Path on the server to search for results (e.g. C:\\Users\\user\\output)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("results.zip"),
+        help="Local path to save the downloaded results zip (default: results.zip)",
     )
     args = parser.parse_args()
     
@@ -253,6 +311,19 @@ def main():
     if args.shutdown:
         shutdown_server(args.server, force=args.force)
         return
+    
+    # Handle get-result (doesn't require APx to be running)
+    if args.get_result:
+        if not args.results_path:
+            print("ERROR: --results-path is required with --get-result")
+            sys.exit(1)
+        success = get_result(
+            args.server,
+            args.get_result,
+            args.results_path,
+            args.output,
+        )
+        sys.exit(0 if success else 1)
     
     # Always check status first
     status = check_status(args.server)
@@ -285,7 +356,7 @@ def main():
     
     # Run sequence if requested
     if args.run_sequence:
-        run_sequence(args.server, args.run_sequence, args.device_id)
+        run_sequence(args.server, args.run_sequence, args.test_run_id)
 
 
 if __name__ == "__main__":

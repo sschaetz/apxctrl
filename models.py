@@ -187,9 +187,9 @@ class ListResponse(BaseModel):
 class RunSequenceRequest(BaseModel):
     """Request for running a sequence."""
     sequence_name: str = Field(..., description="Name of the sequence to run")
-    device_id: str = Field(
+    test_run_id: str = Field(
         default="",
-        description="Device ID to associate with the test run"
+        description="Test run ID to associate with the test run (passed to APx as device ID)"
     )
 
 
@@ -198,7 +198,29 @@ class RunSequenceResponse(BaseModel):
     success: bool
     message: str
     sequence_name: str
-    device_id: str
+    test_run_id: str
     passed: bool = False
     duration_seconds: float = 0.0
     apx_state: APxState
+
+
+# ============================================================================
+# Get Result Models
+# ============================================================================
+
+class GetResultRequest(BaseModel):
+    """Request for getting test results."""
+    test_run_id: str = Field(..., description="Test run ID to search for")
+    results_path: str = Field(
+        ...,
+        description="Path on the server to search for results (e.g. C:\\Users\\user\\Documents\\output)"
+    )
+
+
+class GetResultResponse(BaseModel):
+    """Response for get-result endpoint (metadata only, file sent separately)."""
+    success: bool
+    message: str
+    test_run_id: str
+    directory_found: Optional[str] = None
+    zip_size_bytes: int = 0

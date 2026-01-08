@@ -405,14 +405,14 @@ class APxController:
     def run_sequence(
         self,
         sequence_name: str,
-        device_id: str = "",
+        test_run_id: str = "",
     ) -> tuple[bool, float, Optional[str]]:
         """
         Activate and run a sequence.
         
         Args:
             sequence_name: Name of the sequence to run
-            device_id: Device ID to associate with the test run
+            test_run_id: Test run ID (passed to APx as device ID)
             
         Returns:
             Tuple of (passed, duration_seconds, error message or None)
@@ -434,9 +434,9 @@ class APxController:
             sequences_collection.Activate(sequence_name)
             logger.info(f"Sequence '{sequence_name}' activated")
             
-            # Run the sequence with device ID
-            logger.info(f"Running sequence with device_id: '{device_id}'")
-            self._apx_instance.Sequence.Run(device_id)
+            # Run the sequence with test_run_id (APx calls this "device ID")
+            logger.info(f"Running sequence with test_run_id: '{test_run_id}'")
+            self._apx_instance.Sequence.Run(test_run_id)
             logger.info("Sequence.Run() completed")
             
             # Check if passed
@@ -457,3 +457,80 @@ class APxController:
             
             duration = (datetime.now() - started_at).total_seconds()
             return False, duration, error_msg
+
+    def get_result(
+        self,
+        test_run_id: str,
+        results_path: str,
+    ) -> tuple[Optional[Path], Optional[str], Optional[str]]:
+        """
+        Find and compress test results for a given test run ID.
+        
+        Searches for a directory matching <test_run_id>* in results_path,
+        compresses it to a zip file, and returns the path to the zip.
+        
+        Args:
+            test_run_id: Test run ID to search for
+            results_path: Path to search for results directory
+            
+        Returns:
+            Tuple of (zip_path or None, found_directory_name or None, error message or None)
+        """
+        import shutil
+        import tempfile
+        
+        try:
+            results_dir = Path(results_path)
+            
+            if not results_dir.exists():
+                return None, None, f"Results path does not exist: {results_path}"
+            
+            if not results_dir.is_dir():
+                return None, None, f"Results path is not a directory: {results_path}"
+            
+            # Find directories matching test_run_id*
+            matching_dirs = list(results_dir.glob(f"{test_run_id}*"))
+            matching_dirs = [d for d in matching_dirs if d.is_dir()]
+            
+            if not matching_dirs:
+                return None, None, f"No directory found matching '{test_run_id}*' in {results_path}"
+            
+            if len(matching_dirs) > 1:
+                # Sort by modification time, use most recent
+                matching_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+                logger.warning(
+                    f"Multiple directories match '{test_run_id}*': {[d.name for d in matching_dirs]}. "
+                    f"Using most recent: {matching_dirs[0].name}"
+                )
+            
+            target_dir = matching_dirs[0]
+            logger.info(f"Found results directory: {target_dir}")
+            
+            # Create a temporary zip file
+            temp_dir = Path(tempfile.gettempdir()) / "apxctrl" / "results"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            zip_path = temp_dir / f"{target_dir.name}.zip"
+            
+            # Remove existing zip if present
+            if zip_path.exists():
+                zip_path.unlink()
+            
+            # Create zip archive
+            logger.info(f"Creating zip archive: {zip_path}")
+            shutil.make_archive(
+                str(zip_path.with_suffix("")),  # Base name without .zip
+                "zip",
+                root_dir=str(target_dir.parent),
+                base_dir=target_dir.name,
+            )
+            
+            zip_size = zip_path.stat().st_size
+            logger.info(f"Zip archive created: {zip_path} ({zip_size} bytes)")
+            
+            return zip_path, target_dir.name, None
+            
+        except Exception as e:
+            error_msg = f"Error getting results: {e}"
+            logger.error(error_msg)
+            return None, None, error_msg

@@ -24,6 +24,8 @@ class TestImports:
         assert hasattr(models, "ListResponse")
         assert hasattr(models, "RunSequenceRequest")
         assert hasattr(models, "RunSequenceResponse")
+        assert hasattr(models, "GetResultRequest")
+        assert hasattr(models, "GetResultResponse")
 
     def test_import_apx_controller(self):
         """Test that apx_controller.py can be imported."""
@@ -130,9 +132,9 @@ class TestModels:
         """Test RunSequenceRequest model."""
         from models import RunSequenceRequest
         
-        req = RunSequenceRequest(sequence_name="My Sequence", device_id="DUT-001")
+        req = RunSequenceRequest(sequence_name="My Sequence", test_run_id="TR-001")
         assert req.sequence_name == "My Sequence"
-        assert req.device_id == "DUT-001"
+        assert req.test_run_id == "TR-001"
 
     def test_run_sequence_response(self):
         """Test RunSequenceResponse model."""
@@ -142,13 +144,38 @@ class TestModels:
             success=True,
             message="Passed",
             sequence_name="My Sequence",
-            device_id="DUT-001",
+            test_run_id="TR-001",
             passed=True,
             duration_seconds=5.5,
             apx_state=APxState.IDLE,
         )
         assert resp.passed is True
         assert resp.duration_seconds == 5.5
+
+    def test_get_result_request(self):
+        """Test GetResultRequest model."""
+        from models import GetResultRequest
+        
+        req = GetResultRequest(
+            test_run_id="TR-001",
+            results_path="C:\\Users\\user\\output",
+        )
+        assert req.test_run_id == "TR-001"
+        assert req.results_path == "C:\\Users\\user\\output"
+
+    def test_get_result_response(self):
+        """Test GetResultResponse model."""
+        from models import GetResultResponse
+        
+        resp = GetResultResponse(
+            success=True,
+            message="Found results",
+            test_run_id="TR-001",
+            directory_found="TR-001_20260108",
+            zip_size_bytes=12345,
+        )
+        assert resp.success is True
+        assert resp.directory_found == "TR-001_20260108"
 
 
 class TestController:
@@ -259,9 +286,19 @@ class TestFlaskApp:
         """Test run-sequence endpoint when APx not running."""
         response = client.post(
             "/run-sequence",
-            json={"sequence_name": "Test", "device_id": ""},
+            json={"sequence_name": "Test", "test_run_id": ""},
         )
         assert response.status_code == 409  # Conflict - APx not ready
+        data = response.get_json()
+        assert data["success"] is False
+
+    def test_get_result_not_found(self, client):
+        """Test get-result endpoint with non-existent path."""
+        response = client.post(
+            "/get-result",
+            json={"test_run_id": "TR-999", "results_path": "C:\\nonexistent\\path"},
+        )
+        assert response.status_code == 404
         data = response.get_json()
         assert data["success"] is False
 
