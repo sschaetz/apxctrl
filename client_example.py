@@ -6,14 +6,11 @@ Usage:
     # Upload project and show structure
     python client_example.py --server http://windows-host:5000 --project /path/to/project.approjx
     
-    # List available sequences
-    python client_example.py --server http://windows-host:5000 --list-sequences
+    # List project structure (sequences -> signal paths -> measurements)
+    python client_example.py --server http://windows-host:5000 --list
     
     # Run a sequence with device ID
     python client_example.py --server http://windows-host:5000 --run-sequence "Production Test" --device-id "DUT-001"
-    
-    # Run a signal path
-    python client_example.py --server http://windows-host:5000 --run-signal-path "Signal Path1"
     
     # Reset server
     python client_example.py --server http://windows-host:5000 --reset
@@ -51,7 +48,6 @@ def reset_server(server: str) -> dict:
     print("Resetting server...")
     print(f"{'='*60}")
     
-    # NOTE: /reset is a POST endpoint!
     response = requests.post(f"{server}/reset")
     data = response.json()
     
@@ -101,112 +97,37 @@ def setup_project(server: str, project_path: Path, project_name: str | None = No
     return result
 
 
-def get_sequence_structure(server: str) -> dict:
-    """Get the sequence structure (signal paths and measurements)."""
+def list_structure(server: str) -> dict:
+    """List project structure: sequences -> signal paths -> measurements."""
     print(f"\n{'='*60}")
-    print("Getting sequence structure...")
+    print("Project structure...")
     print(f"{'='*60}")
     
-    response = requests.get(f"{server}/sequence/structure")
+    response = requests.get(f"{server}/list")
     data = response.json()
     
     if not data["success"]:
         print(f"  ✗ Failed: {data['message']}")
         return data
     
+    print(f"  Total Sequences:     {data['total_sequences']}")
     print(f"  Total Signal Paths:  {data['total_signal_paths']}")
     print(f"  Total Measurements:  {data['total_measurements']}")
-    print()
-    
-    for sp in data["signal_paths"]:
-        checked = "✓" if sp["checked"] else "○"
-        print(f"  [{checked}] Signal Path {sp['index']}: {sp['name']}")
-        
-        for m in sp["measurements"]:
-            m_checked = "✓" if m["checked"] else "○"
-            print(f"      [{m_checked}] Measurement {m['index']}: {m['name']}")
-    
-    return data
-
-
-def run_signal_path(server: str, signal_path: str, timeout: float = 120.0) -> dict:
-    """Run all checked measurements in a signal path."""
-    print(f"\n{'='*60}")
-    print(f"Running signal path: {signal_path}")
-    print(f"{'='*60}")
-    
-    response = requests.post(
-        f"{server}/run-signal-path",
-        json={"signal_path": signal_path, "timeout_seconds": timeout},
-    )
-    data = response.json()
-    
-    if not data["success"]:
-        print(f"  ✗ Failed: {data['message']}")
-        return data
-    
-    print(f"  ✓ Signal path completed!")
-    print(f"  Measurements run:    {data['measurements_run']}")
-    print(f"  Measurements passed: {data['measurements_passed']}")
-    print(f"  Measurements failed: {data['measurements_failed']}")
-    print(f"  Total duration:      {data['total_duration_seconds']:.2f}s")
-    print()
-    
-    # Print individual results
-    for result in data["results"]:
-        status = "✓ PASS" if result["passed"] else "✗ FAIL"
-        if not result["success"]:
-            status = "⚠ ERROR"
-        
-        print(f"  [{status}] {result['name']} ({result['duration_seconds']:.2f}s)")
-        
-        if result.get("meter_values"):
-            lower_limits = result.get("lower_limits") or {}
-            upper_limits = result.get("upper_limits") or {}
-            
-            for ch, val in result["meter_values"].items():
-                lower = lower_limits.get(ch)
-                upper = upper_limits.get(ch)
-                
-                # Format with limits if available
-                if lower is not None and upper is not None and val is not None:
-                    print(f"           {ch}: {lower:.2f} <= {val:.2f} <= {upper:.2f}")
-                elif lower is not None and val is not None:
-                    print(f"           {ch}: {lower:.2f} <= {val:.2f}")
-                elif upper is not None and val is not None:
-                    print(f"           {ch}: {val:.2f} <= {upper:.2f}")
-                elif val is not None:
-                    print(f"           {ch}: {val:.2f}")
-                else:
-                    print(f"           {ch}: None")
-        
-        if result.get("error"):
-            print(f"           Error: {result['error']}")
-    
-    return data
-
-
-def list_sequences(server: str) -> dict:
-    """List available sequences in the project."""
-    print(f"\n{'='*60}")
-    print("Listing sequences...")
-    print(f"{'='*60}")
-    
-    response = requests.get(f"{server}/sequences")
-    data = response.json()
-    
-    if not data["success"]:
-        print(f"  ✗ Failed: {data['message']}")
-        return data
-    
-    print(f"  Found {len(data['sequences'])} sequence(s)")
     if data.get("active_sequence"):
-        print(f"  Active: {data['active_sequence']}")
+        print(f"  Active Sequence:     {data['active_sequence']}")
     print()
     
     for seq in data["sequences"]:
         active = " (active)" if seq["name"] == data.get("active_sequence") else ""
-        print(f"  [{seq['index']}] {seq['name']}{active}")
+        print(f"  Sequence [{seq['index']}]: {seq['name']}{active}")
+        
+        for sp in seq["signal_paths"]:
+            checked = "✓" if sp["checked"] else "○"
+            print(f"    [{checked}] Signal Path {sp['index']}: {sp['name']}")
+            
+            for m in sp["measurements"]:
+                m_checked = "✓" if m["checked"] else "○"
+                print(f"        [{m_checked}] {m['name']}")
     
     return data
 
@@ -277,7 +198,7 @@ def main():
     parser.add_argument(
         "--status-only",
         action="store_true",
-        help="Only check status, don't setup or get structure",
+        help="Only check status, don't setup or list",
     )
     parser.add_argument(
         "--reset",
@@ -295,20 +216,9 @@ def main():
         help="Force shutdown (with --shutdown)",
     )
     parser.add_argument(
-        "--run-signal-path",
-        metavar="NAME",
-        help="Run all checked measurements in the named signal path",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=120.0,
-        help="Timeout per measurement in seconds (default: 120)",
-    )
-    parser.add_argument(
-        "--list-sequences",
+        "--list",
         action="store_true",
-        help="List available sequences in the project",
+        help="List project structure (sequences -> signal paths -> measurements)",
     )
     parser.add_argument(
         "--run-sequence",
@@ -351,6 +261,7 @@ def main():
         return
     
     # If project provided, set it up
+    setup_result = None
     if args.project:
         setup_result = setup_project(
             args.server,
@@ -361,26 +272,21 @@ def main():
         if not setup_result["success"]:
             sys.exit(1)
     
-    # Get sequence structure if APx is running
-    if status["apx_state"] == "idle" or (args.project and setup_result.get("success")):
-        structure = get_sequence_structure(args.server)
-        
-        # List sequences if requested
-        if args.list_sequences:
-            list_sequences(args.server)
-        
-        # Run sequence if requested
-        if args.run_sequence:
-            run_sequence(args.server, args.run_sequence, args.device_id)
-        
-        # Run signal path if requested
-        if args.run_signal_path:
-            run_signal_path(args.server, args.run_signal_path, args.timeout)
-    else:
-        print("\n  Skipping sequence structure (APx not in idle state)")
-        print("  Use --project to upload a project first")
+    # Check if APx is running and ready
+    apx_ready = status["apx_state"] == "idle" or (setup_result and setup_result.get("success"))
+    
+    if not apx_ready:
+        print("\n  APx not in idle state. Use --project to upload a project first.")
+        return
+    
+    # List structure if requested or after setup
+    if args.list or args.project:
+        list_structure(args.server)
+    
+    # Run sequence if requested
+    if args.run_sequence:
+        run_sequence(args.server, args.run_sequence, args.device_id)
 
 
 if __name__ == "__main__":
     main()
-

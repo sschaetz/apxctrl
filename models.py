@@ -143,7 +143,7 @@ class StatusResponse(BaseModel):
 
 
 # ============================================================================
-# Sequence Structure Models
+# List Structure Models (Sequences -> Signal Paths -> Measurements)
 # ============================================================================
 
 class MeasurementInfo(BaseModel):
@@ -161,107 +161,28 @@ class SignalPathInfo(BaseModel):
     measurements: list[MeasurementInfo]
 
 
-class SequenceStructureResponse(BaseModel):
-    """Response containing the full sequence structure."""
+class SequenceInfo(BaseModel):
+    """Information about a sequence and its signal paths."""
+    index: int
+    name: str
+    signal_paths: list[SignalPathInfo]
+
+
+class ListResponse(BaseModel):
+    """Response containing the full project structure."""
     success: bool
     message: str
-    signal_paths: list[SignalPathInfo] = []
+    sequences: list[SequenceInfo] = []
+    active_sequence: Optional[str] = None
+    total_sequences: int = 0
     total_signal_paths: int = 0
     total_measurements: int = 0
     apx_state: APxState
 
 
 # ============================================================================
-# Run Signal Path Models
-# ============================================================================
-
-class RunSignalPathRequest(BaseModel):
-    """Request for running all measurements in a signal path."""
-    signal_path: str = Field(..., description="Name of the signal path to run")
-    timeout_seconds: float = Field(
-        default=120.0,
-        ge=1.0,
-        le=3600.0,
-        description="Timeout per measurement (default: 2 min)"
-    )
-
-
-class MeasurementResult(BaseModel):
-    """Result of a single measurement run."""
-    name: str
-    success: bool
-    passed: bool = False
-    duration_seconds: float
-    error: Optional[str] = None
-    meter_values: Optional[dict] = None  # channel -> value
-    lower_limits: Optional[dict] = None  # channel -> lower limit
-    upper_limits: Optional[dict] = None  # channel -> upper limit
-
-
-class RunSignalPathResponse(BaseModel):
-    """Response for running a signal path."""
-    success: bool
-    message: str
-    signal_path: str
-    measurements_run: int = 0
-    measurements_passed: int = 0
-    measurements_failed: int = 0
-    total_duration_seconds: float = 0.0
-    results: list[MeasurementResult] = []
-    apx_state: APxState
-
-
-# ============================================================================
-# Run All and Export Report Models
-# ============================================================================
-
-class RunAllRequest(BaseModel):
-    """Request for running all measurements and exporting report."""
-    timeout_seconds: float = Field(
-        default=120.0,
-        ge=1.0,
-        le=3600.0,
-        description="Timeout per measurement (default: 2 min)"
-    )
-    export_csv: bool = Field(
-        default=True,
-        description="Export CSV report after running"
-    )
-    export_pdf: bool = Field(
-        default=False,
-        description="Export PDF report after running"
-    )
-    report_directory: Optional[str] = Field(
-        default=None,
-        description="Directory to save reports (defaults to temp)"
-    )
-
-
-class RunAllResponse(BaseModel):
-    """Response for running all measurements."""
-    success: bool
-    message: str
-    signal_paths_run: int = 0
-    measurements_run: int = 0
-    measurements_passed: int = 0
-    measurements_failed: int = 0
-    total_duration_seconds: float = 0.0
-    all_passed: bool = False
-    csv_report_path: Optional[str] = None
-    pdf_report_path: Optional[str] = None
-    results_by_signal_path: dict[str, list[MeasurementResult]] = {}
-    apx_state: APxState
-
-
-# ============================================================================
 # Run Sequence Models
 # ============================================================================
-
-class SequenceInfo(BaseModel):
-    """Information about an available sequence."""
-    index: int
-    name: str
-
 
 class RunSequenceRequest(BaseModel):
     """Request for running a sequence."""
@@ -280,13 +201,4 @@ class RunSequenceResponse(BaseModel):
     device_id: str
     passed: bool = False
     duration_seconds: float = 0.0
-    apx_state: APxState
-
-
-class ListSequencesResponse(BaseModel):
-    """Response containing available sequences."""
-    success: bool
-    message: str
-    sequences: list[SequenceInfo] = []
-    active_sequence: Optional[str] = None
     apx_state: APxState

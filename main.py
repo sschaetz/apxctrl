@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,16 +20,11 @@ from apx_controller import APxController
 from models import (
     APxState,
     HealthResponse,
-    ListSequencesResponse,
+    ListResponse,
     ProjectInfo,
     ResetResponse,
-    RunAllRequest,
-    RunAllResponse,
     RunSequenceRequest,
     RunSequenceResponse,
-    RunSignalPathRequest,
-    RunSignalPathResponse,
-    SequenceStructureResponse,
     ServerState,
     SetupResponse,
     ShutdownRequest,
@@ -81,17 +74,14 @@ def index():
     """Service information and available endpoints."""
     return jsonify({
         "service": "APx Control Server",
-        "version": "0.5.0",
+        "version": "1.0.0",
         "endpoints": {
             "GET /": "Service information",
             "GET /health": "Quick health check",
             "GET /status": "Detailed status",
             "POST /setup": "Upload project and launch APx",
-            "GET /sequence/structure": "Get sequence structure (signal paths and measurements)",
-            "GET /sequences": "List available sequences",
+            "GET /list": "List sequences, signal paths, and measurements",
             "POST /run-sequence": "Activate and run a sequence",
-            "POST /run-signal-path": "Run all measurements in a signal path",
-            "POST /run-all": "Run all measurements and export reports",
             "POST /shutdown": "Shutdown APx gracefully",
             "POST /reset": "Kill APx and reset state",
         },
@@ -210,7 +200,7 @@ def setup():
         data_dir.mkdir(parents=True, exist_ok=True)
 
         project_path = data_dir / safe_filename
-
+        
         logger.info(f"Saving project file to: {project_path}")
         file.save(str(project_path))
         
@@ -220,7 +210,7 @@ def setup():
         
         if saved_size == 0:
             raise ValueError("Saved file is empty!")
- 
+        
         # Compute SHA256 for logging
         project_info = ProjectInfo.from_file(project_path, project_name)
         logger.info(
@@ -228,7 +218,7 @@ def setup():
             f"path={project_info.file_path}, "
             f"sha256={project_info.sha256}"
         )
- 
+        
     except Exception as e:
         error_msg = f"Failed to save project file: {e}"
         logger.error(error_msg)
@@ -263,163 +253,49 @@ def setup():
         ).model_dump(mode="json")), 500
 
 
-@app.route("/sequence/structure", methods=["GET"])
-def get_sequence_structure():
+@app.route("/list", methods=["GET"])
+def list_structure():
     """
-    Get the structure of the loaded sequence.
+    List full project structure: sequences -> signal paths -> measurements.
     
-    Returns the hierarchy of signal paths and measurements.
+    Returns the hierarchy of all sequences with their signal paths and measurements.
     """
     state = get_state()
     controller = get_controller()
     
     # Check state
     if state.apx_state == APxState.NOT_RUNNING:
-        return jsonify(SequenceStructureResponse(
+        return jsonify(ListResponse(
             success=False,
             message="APx not running. Call /setup first.",
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 409
     
     # Get structure
-    signal_paths, error = controller.get_sequence_structure()
+    sequences, active_sequence, error = controller.list_structure()
     
     if error:
-        return jsonify(SequenceStructureResponse(
+        return jsonify(ListResponse(
             success=False,
             message=error,
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 500
     
     # Count totals
-    total_measurements = sum(len(sp.measurements) for sp in signal_paths)
-    
-    return jsonify(SequenceStructureResponse(
-        success=True,
-        message="Sequence structure retrieved successfully",
-        signal_paths=signal_paths,
-        total_signal_paths=len(signal_paths),
-        total_measurements=total_measurements,
-        apx_state=state.apx_state,
-    ).model_dump(mode="json"))
-
-
-@app.route("/run-signal-path", methods=["POST"])
-def run_signal_path():
-    """
-    Run all checked measurements in a signal path.
-    
-    Expects JSON body:
-    {
-        "signal_path": "Analog Output",
-        "timeout_seconds": 120.0  // optional, default 2 minutes per measurement
-    }
-    """
-    state = get_state()
-    controller = get_controller()
-    
-    # Parse request
-    try:
-        data = request.get_json()
-        if data is None:
-            return jsonify(RunSignalPathResponse(
-                success=False,
-                message="Request body must be JSON",
-                signal_path="",
-                apx_state=state.apx_state,
-            ).model_dump(mode="json")), 400
-        
-        req = RunSignalPathRequest(**data)
-    except Exception as e:
-        return jsonify(RunSignalPathResponse(
-            success=False,
-            message=f"Invalid request: {e}",
-            signal_path="",
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 400
-    
-    # Check state
-    if state.apx_state != APxState.IDLE:
-        return jsonify(RunSignalPathResponse(
-            success=False,
-            message=f"APx not ready. Current state: {state.apx_state.value}",
-            signal_path=req.signal_path,
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 409
-    
-    # Run signal path
-    results, error = controller.run_signal_path(
-        signal_path_name=req.signal_path,
-        timeout_seconds=req.timeout_seconds,
+    total_signal_paths = sum(len(s.signal_paths) for s in sequences)
+    total_measurements = sum(
+        sum(len(sp.measurements) for sp in s.signal_paths)
+        for s in sequences
     )
     
-    # Calculate stats
-    measurements_run = len(results)
-    measurements_passed = sum(1 for r in results if r.passed)
-    measurements_failed = sum(1 for r in results if r.success and not r.passed)
-    total_duration = sum(r.duration_seconds for r in results)
-    all_success = all(r.success for r in results)
-    
-    if error:
-        return jsonify(RunSignalPathResponse(
-            success=False,
-            message=error,
-            signal_path=req.signal_path,
-            measurements_run=measurements_run,
-            measurements_passed=measurements_passed,
-            measurements_failed=measurements_failed,
-            total_duration_seconds=total_duration,
-            results=results,
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 500
-    
-    return jsonify(RunSignalPathResponse(
-        success=all_success,
-        message=f"Signal path '{req.signal_path}' completed. "
-                f"{measurements_passed}/{measurements_run} passed.",
-        signal_path=req.signal_path,
-        measurements_run=measurements_run,
-        measurements_passed=measurements_passed,
-        measurements_failed=measurements_failed,
-        total_duration_seconds=total_duration,
-        results=results,
-        apx_state=state.apx_state,
-    ).model_dump(mode="json"))
-
-
-@app.route("/sequences", methods=["GET"])
-def list_sequences():
-    """
-    List available sequences in the project.
-    
-    Returns the list of sequences and which one is currently active.
-    """
-    state = get_state()
-    controller = get_controller()
-    
-    # Check state
-    if state.apx_state == APxState.NOT_RUNNING:
-        return jsonify(ListSequencesResponse(
-            success=False,
-            message="APx not running. Call /setup first.",
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 409
-    
-    # Get sequences
-    sequences, active_sequence, error = controller.list_sequences()
-    
-    if error:
-        return jsonify(ListSequencesResponse(
-            success=False,
-            message=error,
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 500
-    
-    return jsonify(ListSequencesResponse(
+    return jsonify(ListResponse(
         success=True,
         message=f"Found {len(sequences)} sequence(s)",
         sequences=sequences,
         active_sequence=active_sequence,
+        total_sequences=len(sequences),
+        total_signal_paths=total_signal_paths,
+        total_measurements=total_measurements,
         apx_state=state.apx_state,
     ).model_dump(mode="json"))
 
@@ -494,91 +370,6 @@ def run_sequence():
         device_id=req.device_id,
         passed=passed,
         duration_seconds=duration,
-        apx_state=state.apx_state,
-    ).model_dump(mode="json"))
-
-
-@app.route("/run-all", methods=["POST"])
-def run_all():
-    """
-    Run all checked measurements in all checked signal paths and export reports.
-    
-    Expects JSON body (all optional):
-    {
-        "timeout_seconds": 120.0,   // default 2 minutes per measurement
-        "export_csv": true,         // default true
-        "export_pdf": false,        // default false
-        "report_directory": null    // defaults to temp directory
-    }
-    """
-    state = get_state()
-    controller = get_controller()
-    
-    # Parse request
-    try:
-        data = request.get_json() or {}
-        req = RunAllRequest(**data)
-    except Exception as e:
-        return jsonify(RunAllResponse(
-            success=False,
-            message=f"Invalid request: {e}",
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 400
-    
-    # Check state
-    if state.apx_state != APxState.IDLE:
-        return jsonify(RunAllResponse(
-            success=False,
-            message=f"APx not ready. Current state: {state.apx_state.value}",
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 409
-    
-    # Run all
-    results_by_sp, error, csv_path, pdf_path = controller.run_all_and_export(
-        timeout_seconds=req.timeout_seconds,
-        export_csv=req.export_csv,
-        export_pdf=req.export_pdf,
-        report_directory=req.report_directory,
-    )
-    
-    # Calculate stats
-    signal_paths_run = len(results_by_sp)
-    all_results = [r for results in results_by_sp.values() for r in results]
-    measurements_run = len(all_results)
-    measurements_passed = sum(1 for r in all_results if r.passed)
-    measurements_failed = sum(1 for r in all_results if r.success and not r.passed)
-    total_duration = sum(r.duration_seconds for r in all_results)
-    all_success = all(r.success for r in all_results)
-    all_passed = all(r.passed for r in all_results if r.success)
-    
-    if error:
-        return jsonify(RunAllResponse(
-            success=False,
-            message=error,
-            signal_paths_run=signal_paths_run,
-            measurements_run=measurements_run,
-            measurements_passed=measurements_passed,
-            measurements_failed=measurements_failed,
-            total_duration_seconds=total_duration,
-            all_passed=False,
-            csv_report_path=csv_path,
-            pdf_report_path=pdf_path,
-            results_by_signal_path={k: v for k, v in results_by_sp.items()},
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 500
-    
-    return jsonify(RunAllResponse(
-        success=all_success,
-        message=f"All measurements completed. {measurements_passed}/{measurements_run} passed.",
-        signal_paths_run=signal_paths_run,
-        measurements_run=measurements_run,
-        measurements_passed=measurements_passed,
-        measurements_failed=measurements_failed,
-        total_duration_seconds=total_duration,
-        all_passed=all_passed,
-        csv_report_path=csv_path,
-        pdf_report_path=pdf_path,
-        results_by_signal_path={k: v for k, v in results_by_sp.items()},
         apx_state=state.apx_state,
     ).model_dump(mode="json"))
 
@@ -715,17 +506,14 @@ def main():
     # Log server info
     logger.info(f"Server will be available at: http://{args.host}:{args.port}")
     logger.info("Endpoints:")
-    logger.info("  GET  /                    - Service information")
-    logger.info("  GET  /health              - Health check")
-    logger.info("  GET  /status              - Detailed status")
-    logger.info("  POST /setup               - Upload project and launch APx")
-    logger.info("  GET  /sequence/structure  - Get signal paths and measurements")
-    logger.info("  GET  /sequences           - List available sequences")
-    logger.info("  POST /run-sequence        - Activate and run a sequence")
-    logger.info("  POST /run-signal-path     - Run all measurements in a signal path")
-    logger.info("  POST /run-all             - Run all and export reports")
-    logger.info("  POST /shutdown            - Shutdown APx")
-    logger.info("  POST /reset               - Kill APx and reset state")
+    logger.info("  GET  /              - Service information")
+    logger.info("  GET  /health        - Health check")
+    logger.info("  GET  /status        - Detailed status")
+    logger.info("  POST /setup         - Upload project and launch APx")
+    logger.info("  GET  /list          - List sequences, signal paths, measurements")
+    logger.info("  POST /run-sequence  - Activate and run a sequence")
+    logger.info("  POST /shutdown      - Shutdown APx")
+    logger.info("  POST /reset         - Kill APx and reset state")
     logger.info("=" * 60)
     
     # Run Flask app

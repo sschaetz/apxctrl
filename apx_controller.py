@@ -16,7 +16,6 @@ from typing import Optional
 from models import (
     APxState,
     MeasurementInfo,
-    MeasurementResult,
     ProjectInfo,
     SequenceInfo,
     ServerState,
@@ -200,24 +199,15 @@ class APxController:
             # Open the project - use absolute path as string
             project_path_str = str(resolved_path)
             logger.info(f"Opening project: {project_path_str}")
-            logger.info(f"Path repr: {repr(project_path_str)}")
             
             self._apx_instance.OpenProject(project_path_str)
             logger.info("OpenProject call returned")
             
-            # Verify project loaded by checking Sequence count and names
+            # Verify project loaded by checking Sequence count
             try:
                 sequence = self._apx_instance.Sequence
                 seq_count = sequence.Count
                 logger.info(f"Project loaded - Sequence has {seq_count} signal path(s)")
-                
-                # Log the names of signal paths to verify correct project loaded
-                for i in range(min(seq_count, 5)):  # Log first 5 at most
-                    try:
-                        sp = sequence.GetSignalPath(i)
-                        logger.info(f"  Signal path {i}: '{sp.Name}'")
-                    except Exception as sp_err:
-                        logger.warning(f"  Could not get signal path {i}: {sp_err}")
             except Exception as e:
                 logger.warning(f"Could not verify project load: {e}")
             
@@ -317,373 +307,15 @@ class APxController:
                 self._state.last_error = "APx instance lost"
                 self._state.last_error_at = datetime.now()
                 return False
-            
-            # Could add additional health checks here, like:
-            # - Check if APx process is still running
-            # - Try a simple API call to verify responsiveness
         
         return True
 
-    def get_sequence_structure(self) -> tuple[list[SignalPathInfo], Optional[str]]:
+    def list_structure(self) -> tuple[list[SequenceInfo], Optional[str], Optional[str]]:
         """
-        Get the structure of the loaded sequence.
-        
-        Traverses the APx Sequence to enumerate all signal paths and their
-        measurements, including their checked state.
+        List full project structure: sequences -> signal paths -> measurements.
         
         Returns:
-            Tuple of (list of SignalPathInfo, error message or None)
-        """
-        if self._apx_instance is None:
-            return [], "APx instance not initialized"
-        
-        if self._state.apx_state == APxState.NOT_RUNNING:
-            return [], "APx not running"
-        
-        try:
-            signal_paths = []
-            sequence = self._apx_instance.Sequence
-            
-            # Traverse each signal path in the sequence using index-based access
-            # Sequence has Count property and Item(index) indexer
-            for sp_idx in range(sequence.Count):
-                logger.info(f"{sp_idx} / {sequence.Count}")
-                signal_path = sequence.GetSignalPath(sp_idx)
-                measurements = []
-                
-                # Traverse each measurement in the signal path
-                # ISignalPath also has Count and Item(index)
-                for m_idx in range(signal_path.Count):
-                    measurement = signal_path.GetMeasurement(m_idx)
-                    measurements.append(MeasurementInfo(
-                        index=m_idx,
-                        name=measurement.Name,
-                        checked=measurement.Checked,
-                    ))
-                
-                signal_paths.append(SignalPathInfo(
-                    index=sp_idx,
-                    name=signal_path.Name,
-                    checked=signal_path.Checked,
-                    measurements=measurements,
-                ))
-            
-            logger.info(
-                f"Retrieved sequence structure: {len(signal_paths)} signal paths, "
-                f"{sum(len(sp.measurements) for sp in signal_paths)} total measurements"
-            )
-            return signal_paths, None
-            
-        except Exception as e:
-            error_msg = f"Error getting sequence structure: {e}"
-            logger.error(error_msg)
-            return [], error_msg
-
-    def run_measurement(
-        self,
-        signal_path_name: str,
-        measurement_name: str,
-        timeout_seconds: float = 120.0,
-    ) -> MeasurementResult:
-        """
-        Run a single measurement by signal path and measurement name.
-        
-        Args:
-            signal_path_name: Name of the signal path
-            measurement_name: Name of the measurement
-            timeout_seconds: Maximum time to wait for completion
-            
-        Returns:
-            MeasurementResult with success status and data
-        """
-        started_at = datetime.now()
-        
-        if self._apx_instance is None:
-            return MeasurementResult(
-                name=measurement_name,
-                success=False,
-                passed=False,
-                duration_seconds=0.0,
-                error="APx instance not initialized",
-            )
-        
-        try:
-            self._state.apx_state = APxState.RUNNING_STEP
-            logger.info(f"Running measurement: {signal_path_name}/{measurement_name}")
-            
-            # Get the measurement from the sequence
-            # In pythonnet, use .Item() for string-based indexer access
-            # C# pattern: APx.Sequence["SignalPath"]["Measurement"]
-            # Python pattern: APx.Sequence.Item("SignalPath").Item("Measurement")
-            sequence = self._apx_instance.Sequence
-            signal_path = sequence.GetSignalPath(signal_path_name)
-            measurement = signal_path.GetMeasurement(measurement_name)
-            
-            # Run the measurement
-            logger.info(f"Calling measurement.Run()")
-            measurement.Run()
-            logger.info(f"measurement.Run() completed")
-            
-            # Get results
-            passed = True
-            meter_values = {}
-            lower_limits = {}
-            upper_limits = {}
-            
-            if measurement.HasSequenceResults:
-                seq_results = measurement.SequenceResults
-                result_count = seq_results.Count
-                logger.info(f"Measurement has {result_count} sequence result(s)")
-                
-                # Iterate through results using index-based access
-                # Use .Item() or .GetResult() depending on API
-                for r_idx in range(result_count):
-                    try:
-                        result = seq_results.Item(r_idx)
-                    except Exception:
-                        # Fallback: try direct indexing
-                        result = seq_results[r_idx]
-                    
-                    # Check pass/fail for this result
-                    upper_passed = result.PassedUpperLimitCheck
-                    lower_passed = result.PassedLowerLimitCheck
-                    passed = passed and upper_passed and lower_passed
-                    
-                    logger.info(
-                        f"  Result {r_idx}: upper={upper_passed}, lower={lower_passed}"
-                    )
-                    
-                    # Get meter values and limits if available
-                    if result.HasMeterValues:
-                        values = result.GetMeterValues()
-                        for i in range(len(values)):
-                            meter_values[f"ch{i+1}"] = values[i]
-                        
-                        # Get lower limits
-                        try:
-                            lower_vals = result.GetMeterLowerLimitValues()
-                            for i in range(len(lower_vals)):
-                                # NaN means no limit defined
-                                if not (lower_vals[i] != lower_vals[i]):  # Check for NaN
-                                    lower_limits[f"ch{i+1}"] = lower_vals[i]
-                        except Exception as e:
-                            logger.debug(f"Could not get lower limits: {e}")
-                        
-                        # Get upper limits
-                        try:
-                            upper_vals = result.GetMeterUpperLimitValues()
-                            for i in range(len(upper_vals)):
-                                # NaN means no limit defined
-                                if not (upper_vals[i] != upper_vals[i]):  # Check for NaN
-                                    upper_limits[f"ch{i+1}"] = upper_vals[i]
-                        except Exception as e:
-                            logger.debug(f"Could not get upper limits: {e}")
-                        
-                        logger.info(f"  Meter values: {meter_values}")
-                        if lower_limits:
-                            logger.info(f"  Lower limits: {lower_limits}")
-                        if upper_limits:
-                            logger.info(f"  Upper limits: {upper_limits}")
-            else:
-                logger.warning("Measurement has no sequence results")
-                passed = False
-            
-            self._state.apx_state = APxState.IDLE
-            completed_at = datetime.now()
-            duration = (completed_at - started_at).total_seconds()
-            
-            logger.info(
-                f"Measurement completed: {signal_path_name}/{measurement_name}, "
-                f"passed={passed}, duration={duration:.2f}s"
-            )
-            
-            return MeasurementResult(
-                name=measurement_name,
-                success=True,
-                passed=passed,
-                duration_seconds=duration,
-                meter_values=meter_values if meter_values else None,
-                lower_limits=lower_limits if lower_limits else None,
-                upper_limits=upper_limits if upper_limits else None,
-            )
-            
-        except Exception as e:
-            error_msg = f"Error running measurement: {e}"
-            logger.error(error_msg)
-            self._state.apx_state = APxState.ERROR
-            self._state.last_error = error_msg
-            self._state.last_error_at = datetime.now()
-            
-            return MeasurementResult(
-                name=measurement_name,
-                success=False,
-                passed=False,
-                duration_seconds=(datetime.now() - started_at).total_seconds(),
-                error=error_msg,
-            )
-
-    def run_signal_path(
-        self,
-        signal_path_name: str,
-        timeout_seconds: float = 120.0,
-    ) -> tuple[list[MeasurementResult], Optional[str]]:
-        """
-        Run all checked measurements in a signal path.
-        
-        Args:
-            signal_path_name: Name of the signal path
-            timeout_seconds: Timeout per measurement
-            
-        Returns:
-            Tuple of (list of MeasurementResult, error message or None)
-        """
-        if self._apx_instance is None:
-            return [], "APx instance not initialized"
-        
-        if self._state.apx_state != APxState.IDLE:
-            return [], f"APx not in IDLE state (current: {self._state.apx_state.value})"
-        
-        results = []
-        
-        try:
-            # Get the sequence structure first
-            structure, error = self.get_sequence_structure()
-            if error:
-                return [], error
-            
-            # Find the signal path
-            signal_path = None
-            for sp in structure:
-                if sp.name == signal_path_name:
-                    signal_path = sp
-                    break
-            
-            if signal_path is None:
-                return [], f"Signal path '{signal_path_name}' not found"
-            
-            # Run each checked measurement
-            for measurement in signal_path.measurements:
-                if measurement.checked:
-                    result = self.run_measurement(
-                        signal_path_name=signal_path_name,
-                        measurement_name=measurement.name,
-                        timeout_seconds=timeout_seconds,
-                    )
-                    results.append(result)
-                    
-                    # If measurement failed to run (not just failed limits), stop
-                    if not result.success:
-                        logger.warning(
-                            f"Stopping signal path run due to measurement error: "
-                            f"{measurement.name}"
-                        )
-                        break
-            
-            return results, None
-            
-        except Exception as e:
-            error_msg = f"Error running signal path: {e}"
-            logger.error(error_msg)
-            return results, error_msg
-
-    def run_all_and_export(
-        self,
-        timeout_seconds: float = 120.0,
-        export_csv: bool = True,
-        export_pdf: bool = False,
-        report_directory: Optional[str] = None,
-    ) -> tuple[dict[str, list[MeasurementResult]], Optional[str], Optional[str], Optional[str]]:
-        """
-        Run all checked measurements and export reports.
-        
-        Args:
-            timeout_seconds: Timeout per measurement
-            export_csv: Whether to export CSV report
-            export_pdf: Whether to export PDF report
-            report_directory: Directory for reports (defaults to temp)
-            
-        Returns:
-            Tuple of (results dict by signal path, error, csv_path, pdf_path)
-        """
-        if self._apx_instance is None:
-            return {}, "APx instance not initialized", None, None
-        
-        if self._state.apx_state != APxState.IDLE:
-            return {}, f"APx not in IDLE state (current: {self._state.apx_state.value})", None, None
-        
-        results_by_signal_path: dict[str, list[MeasurementResult]] = {}
-        csv_path = None
-        pdf_path = None
-        
-        try:
-            # Get the sequence structure
-            structure, error = self.get_sequence_structure()
-            if error:
-                return {}, error, None, None
-            
-            # Run each checked signal path
-            for signal_path in structure:
-                if signal_path.checked:
-                    logger.info(f"Running signal path: {signal_path.name}")
-                    
-                    sp_results, sp_error = self.run_signal_path(
-                        signal_path_name=signal_path.name,
-                        timeout_seconds=timeout_seconds,
-                    )
-                    
-                    results_by_signal_path[signal_path.name] = sp_results
-                    
-                    if sp_error:
-                        logger.warning(f"Signal path error: {sp_error}")
-                        # Continue with other signal paths
-            
-            # Export reports
-            if report_directory:
-                report_dir = Path(report_directory)
-            else:
-                import tempfile
-                report_dir = Path(tempfile.gettempdir()) / "apxctrl" / "reports"
-            
-            report_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # =================================================================
-            # STUB: Export reports via APx API
-            # =================================================================
-            # TODO: Implement actual APx API calls. Example:
-            #
-            # if export_csv:
-            #     csv_path = str(report_dir / f"report_{timestamp}.csv")
-            #     self._apx_instance.Sequence.Report.ExportText(csv_path)
-            #     logger.info(f"Exported CSV report: {csv_path}")
-            #
-            # if export_pdf:
-            #     pdf_path = str(report_dir / f"report_{timestamp}.pdf")
-            #     self._apx_instance.Sequence.Report.ExportPdf(pdf_path)
-            #     logger.info(f"Exported PDF report: {pdf_path}")
-            # =================================================================
-            
-            if export_csv:
-                csv_path = str(report_dir / f"report_{timestamp}.csv")
-                logger.info(f"STUB: Would export CSV report to: {csv_path}")
-            
-            if export_pdf:
-                pdf_path = str(report_dir / f"report_{timestamp}.pdf")
-                logger.info(f"STUB: Would export PDF report to: {pdf_path}")
-            
-            return results_by_signal_path, None, csv_path, pdf_path
-            
-        except Exception as e:
-            error_msg = f"Error running all measurements: {e}"
-            logger.error(error_msg)
-            return results_by_signal_path, error_msg, csv_path, pdf_path
-
-    def list_sequences(self) -> tuple[list[SequenceInfo], Optional[str], Optional[str]]:
-        """
-        List available sequences in the project.
-        
-        Returns:
-            Tuple of (list of SequenceInfo, active sequence name or None, error message or None)
+            Tuple of (list of SequenceInfo with nested structure, active sequence name, error message or None)
         """
         if self._apx_instance is None:
             return [], None, "APx instance not initialized"
@@ -692,33 +324,81 @@ class APxController:
             return [], None, "APx not running"
         
         try:
-            sequences_collection = self._apx_instance.Sequence.Sequences
-            seq_count = sequences_collection.Count
-            logger.info(f"Found {seq_count} sequence(s)")
-            
             sequences = []
             active_sequence = None
             
-            for i in range(seq_count):
-                seq = sequences_collection.Item(i)
-                seq_name = seq.Name
-                sequences.append(SequenceInfo(
-                    index=i,
-                    name=seq_name,
-                ))
-                logger.info(f"  Sequence {i}: '{seq_name}'")
+            # Get sequences collection
+            sequences_collection = self._apx_instance.Sequence.Sequences
+            seq_count = sequences_collection.Count
+            logger.info(f"Found {seq_count} sequence(s)")
             
             # Try to get active sequence name
             try:
                 active_sequence = self._apx_instance.Sequence.ActiveSequence.Name
                 logger.info(f"Active sequence: '{active_sequence}'")
-            except Exception as e:
+        except Exception as e:
                 logger.debug(f"Could not get active sequence: {e}")
+            
+            # Iterate through sequences
+            for seq_idx in range(seq_count):
+                seq = sequences_collection[seq_idx]
+                seq_name = seq.Name
+                logger.info(f"  Sequence {seq_idx}: '{seq_name}'")
+                
+                # Activate this sequence to get its structure
+                sequences_collection.Activate(seq_name)
+                
+                # Get signal paths for this sequence
+                signal_paths = []
+                sequence = self._apx_instance.Sequence
+                
+                for sp_idx in range(sequence.Count):
+                    signal_path = sequence.GetSignalPath(sp_idx)
+                    measurements = []
+                    
+                    # Get measurements for this signal path
+                    for m_idx in range(signal_path.Count):
+                        measurement = signal_path.GetMeasurement(m_idx)
+                        measurements.append(MeasurementInfo(
+                            index=m_idx,
+                            name=measurement.Name,
+                            checked=measurement.Checked,
+                        ))
+                    
+                    signal_paths.append(SignalPathInfo(
+                        index=sp_idx,
+                        name=signal_path.Name,
+                        checked=signal_path.Checked,
+                        measurements=measurements,
+                    ))
+                
+                sequences.append(SequenceInfo(
+                    index=seq_idx,
+                    name=seq_name,
+                    signal_paths=signal_paths,
+                ))
+            
+            # Restore active sequence if we had one
+            if active_sequence:
+                try:
+                    sequences_collection.Activate(active_sequence)
+                except Exception as e:
+                    logger.debug(f"Could not restore active sequence: {e}")
+            
+            total_sp = sum(len(s.signal_paths) for s in sequences)
+            total_m = sum(
+                sum(len(sp.measurements) for sp in s.signal_paths)
+                for s in sequences
+            )
+            logger.info(
+                f"Listed structure: {len(sequences)} sequences, "
+                f"{total_sp} signal paths, {total_m} measurements"
+            )
             
             return sequences, active_sequence, None
             
         except Exception as e:
-            error_msg = f"Error listing sequences: {e}"
+            error_msg = f"Error listing structure: {e}"
             logger.error(error_msg)
             return [], None, error_msg
 
