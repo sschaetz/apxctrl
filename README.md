@@ -54,10 +54,10 @@ netsh advfirewall firewall add rule name="apxctrl TCP Port 5000" dir=in action=a
 netsh advfirewall firewall add rule name="apxctrl TCP Port 5000" dir=out action=allow protocol=TCP localport=5000
 ```
 
-Basic usage:
+Basic usage of server:
 
 ```bash
-uv run .\main.py --kill-existing
+uv run apxctrl --kill-existing
 ```
 
 Note that you can't run this from a no-GUI terminal (like an SSH session), it will not work.
@@ -72,3 +72,9 @@ With options:
 | `--host HOST` | Host to bind to | 0.0.0.0 |
 | `--port PORT` | Port to bind to | 5000 |
 | `--debug` | Enable Flask debug mode | False |
+
+Basic usage of client (demonstrates API usage):
+
+```bash
+uv run apxctrl-client --help
+```
