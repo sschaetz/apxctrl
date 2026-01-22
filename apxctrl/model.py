@@ -210,10 +210,9 @@ class RunSequenceResponse(BaseModel):
 
 class GetResultRequest(BaseModel):
     """Request for getting test results."""
-    test_run_id: str = Field(..., description="Test run ID to search for")
     results_path: str = Field(
         ...,
-        description="Path on the server to search for results (e.g. C:\\Users\\user\\Documents\\output)"
+        description="Path prefix to search for (e.g. C:\\apx-data\\ABCD-9483ur9sd)"
     )
 
 
@@ -221,7 +220,7 @@ class GetResultResponse(BaseModel):
     """Response for get-result endpoint (metadata only, file sent separately)."""
     success: bool
     message: str
-    test_run_id: str
+    results_path: str
     directory_found: Optional[str] = None
     zip_size_bytes: int = 0
 

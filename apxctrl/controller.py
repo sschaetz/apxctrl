@@ -7,7 +7,9 @@ Designed for robustness in factory environments (thousands of runs/day).
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -468,46 +470,45 @@ class APxController:
 
     def get_result(
         self,
-        test_run_id: str,
         results_path: str,
     ) -> tuple[Optional[Path], Optional[str], Optional[str]]:
         """
-        Find and compress test results for a given test run ID.
+        Find and compress test results directory.
         
-        Searches for a directory matching <test_run_id>* in results_path,
-        compresses it to a zip file, and returns the path to the zip.
+        Searches for a directory matching <results_path>* (results_path is a path prefix).
+        For example, if results_path is "c:\\apx-data\\ABCD-9483ur9sd", this will find
+        directories like "c:\\apx-data\\ABCD-9483ur9sd-2026-01-22".
         
         Args:
-            test_run_id: Test run ID to search for
-            results_path: Path to search for results directory
+            results_path: Path prefix to search for (e.g., "c:\\apx-data\\ABCD-9483ur9sd")
             
         Returns:
             Tuple of (zip_path or None, found_directory_name or None, error message or None)
         """
-        import shutil
-        import tempfile
         
         try:
-            results_dir = Path(results_path)
+            base_path = Path(results_path)
+            parent_dir = base_path.parent
+            prefix = base_path.name
             
-            if not results_dir.exists():
-                return None, None, f"Results path does not exist: {results_path}"
+            if not parent_dir.exists():
+                return None, None, f"Parent directory does not exist: {parent_dir}"
             
-            if not results_dir.is_dir():
-                return None, None, f"Results path is not a directory: {results_path}"
+            if not parent_dir.is_dir():
+                return None, None, f"Parent path is not a directory: {parent_dir}"
             
-            # Find directories matching test_run_id*
-            matching_dirs = list(results_dir.glob(f"{test_run_id}*"))
+            # Find directories matching prefix* in parent directory
+            matching_dirs = list(parent_dir.glob(f"{prefix}*"))
             matching_dirs = [d for d in matching_dirs if d.is_dir()]
             
             if not matching_dirs:
-                return None, None, f"No directory found matching '{test_run_id}*' in {results_path}"
+                return None, None, f"No directory found matching '{prefix}*' in {parent_dir}"
             
             if len(matching_dirs) > 1:
                 # Sort by modification time, use most recent
                 matching_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
                 logger.warning(
-                    f"Multiple directories match '{test_run_id}*': {[d.name for d in matching_dirs]}. "
+                    f"Multiple directories match '{prefix}*': {[d.name for d in matching_dirs]}. "
                     f"Using most recent: {matching_dirs[0].name}"
                 )
             

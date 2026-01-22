@@ -369,12 +369,11 @@ def get_result():
     
     Expects JSON body:
     {
-        "test_run_id": "TR-12345",
-        "results_path": "C:\\Users\\user\\Documents\\output"
+        "results_path": "C:\\apx-data\\ABCD-9483ur9sd"
     }
     
-    Searches for a directory matching <test_run_id>* in results_path,
-    compresses it, and returns the zip file.
+    Searches for a directory matching <results_path>* (e.g., finds
+    C:\\apx-data\\ABCD-9483ur9sd-2026-01-22), compresses it, and returns the zip file.
     """
     controller = get_controller()
     
@@ -385,7 +384,7 @@ def get_result():
             return jsonify(GetResultResponse(
                 success=False,
                 message="Request body must be JSON",
-                test_run_id="",
+                results_path="",
             ).model_dump(mode="json")), 400
         
         req = GetResultRequest(**data)
@@ -393,12 +392,11 @@ def get_result():
         return jsonify(GetResultResponse(
             success=False,
             message=f"Invalid request: {e}",
-            test_run_id="",
+            results_path="",
         ).model_dump(mode="json")), 400
     
-    # Get result
+    # Get result (finds directory matching results_path*)
     zip_path, found_dir, error = controller.get_result(
-        test_run_id=req.test_run_id,
         results_path=req.results_path,
     )
     
@@ -406,7 +404,7 @@ def get_result():
         return jsonify(GetResultResponse(
             success=False,
             message=error,
-            test_run_id=req.test_run_id,
+            results_path=req.results_path,
         ).model_dump(mode="json")), 404
     
     # Send the zip file
