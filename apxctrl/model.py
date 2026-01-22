@@ -224,3 +224,22 @@ class GetResultResponse(BaseModel):
     test_run_id: str
     directory_found: Optional[str] = None
     zip_size_bytes: int = 0
+
+
+# ============================================================================
+# Set User Defined Variable Models
+# ============================================================================
+
+class SetUserDefinedVariableRequest(BaseModel):
+    """Request for setting a user-defined variable."""
+    name: str = Field(..., description="Name of the user-defined variable")
+    value: str = Field(..., description="Value to set for the variable")
+
+
+class SetUserDefinedVariableResponse(BaseModel):
+    """Response for setting a user-defined variable."""
+    success: bool
+    message: str
+    name: str
+    value: str
+    apx_state: APxState

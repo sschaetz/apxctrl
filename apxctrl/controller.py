@@ -534,3 +534,35 @@ class APxController:
             error_msg = f"Error getting results: {e}"
             logger.error(error_msg)
             return None, None, error_msg
+
+    def set_user_defined_variable(
+        self,
+        name: str,
+        value: str,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Set a user-defined variable in APx.
+        
+        Args:
+            name: Name of the user-defined variable
+            value: Value to set for the variable
+            
+        Returns:
+            Tuple of (success, error message or None)
+        """
+        if self._apx_instance is None:
+            return False, "APx instance not initialized"
+        
+        if self._state.apx_state == APxState.NOT_RUNNING:
+            return False, "APx not running"
+        
+        try:
+            logger.info(f"Setting user-defined variable '{name}' = '{value}'")
+            self._apx_instance.Variables.SetUserDefinedVariable(name, value)
+            logger.info(f"User-defined variable '{name}' set successfully")
+            return True, None
+            
+        except Exception as e:
+            error_msg = f"Error setting user-defined variable: {e}"
+            logger.error(error_msg)
+            return False, error_msg

@@ -29,6 +29,8 @@ from apxctrl.model import (
     RunSequenceResponse,
     ServerState,
     SetupResponse,
+    SetUserDefinedVariableRequest,
+    SetUserDefinedVariableResponse,
     ShutdownRequest,
     ShutdownResponse,
     StatusResponse,
@@ -85,6 +87,7 @@ def index():
             "GET /list": "List sequences, signal paths, and measurements",
             "POST /run-sequence": "Activate and run a sequence",
             "POST /get-result": "Download test results as zip",
+            "POST /set-user-defined-variable": "Set a user-defined variable",
             "POST /shutdown": "Shutdown APx gracefully",
             "POST /reset": "Kill APx and reset state",
         },
@@ -493,6 +496,76 @@ def reset():
     ).model_dump(mode="json"))
 
 
+@app.route("/set-user-defined-variable", methods=["POST"])
+def set_user_defined_variable():
+    """
+    Set a user-defined variable in APx.
+    
+    Expects JSON body:
+    {
+        "name": "MyVariable",
+        "value": "MyValue"
+    }
+    """
+    state = get_state()
+    controller = get_controller()
+    
+    # Parse request
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify(SetUserDefinedVariableResponse(
+                success=False,
+                message="Request body must be JSON",
+                name="",
+                value="",
+                apx_state=state.apx_state,
+            ).model_dump(mode="json")), 400
+        
+        req = SetUserDefinedVariableRequest(**data)
+    except Exception as e:
+        return jsonify(SetUserDefinedVariableResponse(
+            success=False,
+            message=f"Invalid request: {e}",
+            name="",
+            value="",
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 400
+    
+    # Check state
+    if state.apx_state == APxState.NOT_RUNNING:
+        return jsonify(SetUserDefinedVariableResponse(
+            success=False,
+            message="APx not running. Call /setup first.",
+            name=req.name,
+            value=req.value,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 409
+    
+    # Set the variable
+    success, error = controller.set_user_defined_variable(
+        name=req.name,
+        value=req.value,
+    )
+    
+    if error:
+        return jsonify(SetUserDefinedVariableResponse(
+            success=False,
+            message=error,
+            name=req.name,
+            value=req.value,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+    
+    return jsonify(SetUserDefinedVariableResponse(
+        success=True,
+        message=f"Variable '{req.name}' set to '{req.value}'",
+        name=req.name,
+        value=req.value,
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
+
+
 # ============================================================================
 # Error handlers
 # ============================================================================
@@ -572,6 +645,7 @@ def main():
     logger.info("  GET  /list          - List sequences, signal paths, measurements")
     logger.info("  POST /run-sequence  - Activate and run a sequence")
     logger.info("  POST /get-result    - Download test results as zip")
+    logger.info("  POST /set-user-defined-variable - Set a user-defined variable")
     logger.info("  POST /shutdown      - Shutdown APx")
     logger.info("  POST /reset         - Kill APx and reset state")
     logger.info("=" * 60)
