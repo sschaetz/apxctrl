@@ -303,12 +303,23 @@ class APxController:
         if self._state.apx_state in (APxState.IDLE, APxState.RUNNING_STEP):
             if self._apx_instance is None:
                 # We think APx is running but we have no instance
-                self._state.apx_state = APxState.ERROR
+                self._state.apx_state = APxState.NOT_RUNNING
                 self._state.last_error = "APx instance lost"
                 self._state.last_error_at = datetime.now()
                 return False
         
         return True
+
+    def _require_apx(self) -> Optional[str]:
+        """
+        Check that APx is available for operations.
+        
+        Returns:
+            Error message if APx is not available, None if ready.
+        """
+        if self._apx_instance is None:
+            return "APx not running. Call /setup first."
+        return None
 
     def list_structure(self) -> tuple[list[SequenceInfo], Optional[str], Optional[str]]:
         """
@@ -317,11 +328,8 @@ class APxController:
         Returns:
             Tuple of (list of SequenceInfo with nested structure, active sequence name, error message or None)
         """
-        if self._apx_instance is None:
-            return [], None, "APx instance not initialized"
-        
-        if self._state.apx_state == APxState.NOT_RUNNING:
-            return [], None, "APx not running"
+        if err := self._require_apx():
+            return [], None, err
         
         try:
             sequences = []
@@ -417,11 +425,11 @@ class APxController:
         Returns:
             Tuple of (passed, duration_seconds, error message or None)
         """
-        if self._apx_instance is None:
-            return False, 0.0, "APx instance not initialized"
+        if err := self._require_apx():
+            return False, 0.0, err
         
-        if self._state.apx_state != APxState.IDLE:
-            return False, 0.0, f"APx not in IDLE state (current: {self._state.apx_state.value})"
+        if self._state.apx_state == APxState.RUNNING_STEP:
+            return False, 0.0, "A sequence is already running"
         
         started_at = datetime.now()
         
@@ -443,20 +451,20 @@ class APxController:
             passed = self._apx_instance.Sequence.Passed
             logger.info(f"Sequence passed: {passed}")
             
-            self._state.apx_state = APxState.IDLE
             duration = (datetime.now() - started_at).total_seconds()
-            
             return passed, duration, None
             
         except Exception as e:
             error_msg = f"Error running sequence: {e}"
             logger.error(error_msg)
-            self._state.apx_state = APxState.ERROR
             self._state.last_error = error_msg
             self._state.last_error_at = datetime.now()
             
             duration = (datetime.now() - started_at).total_seconds()
             return False, duration, error_msg
+        finally:
+            # Always return to IDLE - APx is still running even after errors
+            self._state.apx_state = APxState.IDLE
 
     def get_result(
         self,
@@ -550,11 +558,8 @@ class APxController:
         Returns:
             Tuple of (success, error message or None)
         """
-        if self._apx_instance is None:
-            return False, "APx instance not initialized"
-        
-        if self._state.apx_state == APxState.NOT_RUNNING:
-            return False, "APx not running"
+        if err := self._require_apx():
+            return False, err
         
         try:
             logger.info(f"Setting user-defined variable '{name}' = '{value}'")

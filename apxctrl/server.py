@@ -269,15 +269,7 @@ def list_structure():
     state = get_state()
     controller = get_controller()
     
-    # Check state
-    if state.apx_state == APxState.NOT_RUNNING:
-        return jsonify(ListResponse(
-            success=False,
-            message="APx not running. Call /setup first.",
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 409
-    
-    # Get structure
+    # Get structure (controller handles state checking)
     sequences, active_sequence, error = controller.list_structure()
     
     if error:
@@ -342,17 +334,7 @@ def run_sequence():
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 400
     
-    # Check state
-    if state.apx_state != APxState.IDLE:
-        return jsonify(RunSequenceResponse(
-            success=False,
-            message=f"APx not ready. Current state: {state.apx_state.value}",
-            sequence_name=req.sequence_name,
-            test_run_id=req.test_run_id,
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 409
-    
-    # Run sequence (test_run_id is passed to APx as device_id)
+    # Run sequence (controller handles state checking)
     passed, duration, error = controller.run_sequence(
         sequence_name=req.sequence_name,
         test_run_id=req.test_run_id,
@@ -532,17 +514,7 @@ def set_user_defined_variable():
             apx_state=state.apx_state,
         ).model_dump(mode="json")), 400
     
-    # Check state
-    if state.apx_state == APxState.NOT_RUNNING:
-        return jsonify(SetUserDefinedVariableResponse(
-            success=False,
-            message="APx not running. Call /setup first.",
-            name=req.name,
-            value=req.value,
-            apx_state=state.apx_state,
-        ).model_dump(mode="json")), 409
-    
-    # Set the variable
+    # Set the variable (controller handles state checking)
     success, error = controller.set_user_defined_variable(
         name=req.name,
         value=req.value,
