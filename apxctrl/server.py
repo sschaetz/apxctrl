@@ -189,7 +189,7 @@ def setup():
     # Get optional parameters from form data
     project_name = request.form.get("project_name", None)
     apx_mode = request.form.get("apx_mode", "SequenceMode")
-    apx_args = request.form.get("apx_args", "-Demo -APx517")
+    apx_args = request.form.get("apx_args", "")
     
     # If APx is already running, shut it down first
     if state.apx_state in (APxState.IDLE, APxState.ERROR):
