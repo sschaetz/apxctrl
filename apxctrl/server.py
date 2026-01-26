@@ -34,6 +34,7 @@ from apxctrl.model import (
     ShutdownRequest,
     ShutdownResponse,
     StatusResponse,
+    UploadDataFileResponse,
 )
 
 # Configure logging
@@ -84,6 +85,7 @@ def index():
             "GET /health": "Quick health check",
             "GET /status": "Detailed status",
             "POST /setup": "Upload project and launch APx",
+            "POST /upload-data-file": "Upload a data file to a subdirectory",
             "GET /list": "List sequences, signal paths, and measurements",
             "POST /run-sequence": "Activate and run a sequence",
             "POST /get-result": "Download test results as zip",
@@ -256,6 +258,80 @@ def setup():
             success=False,
             message=state.last_error or "Failed to launch APx",
             apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+
+
+@app.route("/upload-data-file", methods=["POST"])
+def upload_data_file():
+    """
+    Upload a data file to the data folder (optionally in a subdirectory).
+    
+    Expects multipart/form-data with:
+    - file: The data file to upload
+    - subdirectory (optional): Subdirectory name (e.g., "acoustic-test-data")
+    
+    Files are saved to ~/apxctrl-data/<subdirectory>/<filename>
+    If subdirectory is empty, files go directly to ~/apxctrl-data/<filename>
+    
+    Existing files are overwritten.
+    """
+    # Get the uploaded file
+    if "file" not in request.files:
+        return jsonify(UploadDataFileResponse(
+            success=False,
+            message="No file provided. Send file as 'file' in multipart/form-data",
+            filename="",
+            subdirectory="",
+            file_path="",
+        ).model_dump(mode="json")), 400
+    
+    file = request.files["file"]
+    if file.filename == "" or file.filename is None:
+        return jsonify(UploadDataFileResponse(
+            success=False,
+            message="Empty filename",
+            filename="",
+            subdirectory="",
+            file_path="",
+        ).model_dump(mode="json")), 400
+    
+    # Get subdirectory from form data (optional, defaults to empty = root data dir)
+    subdirectory = request.form.get("subdirectory", "")
+    
+    try:
+        # Create target directory
+        data_dir = Path.home() / "apxctrl-data"
+        if subdirectory:
+            data_dir = data_dir / subdirectory
+        data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save file (overwrites existing)
+        file_path = data_dir / file.filename
+        logger.info(f"Saving data file to: {file_path}")
+        file.save(str(file_path))
+        
+        # Verify file was saved
+        saved_size = file_path.stat().st_size
+        logger.info(f"Data file saved: {file_path} ({saved_size} bytes)")
+        
+        return jsonify(UploadDataFileResponse(
+            success=True,
+            message=f"File '{file.filename}' uploaded successfully",
+            filename=file.filename,
+            subdirectory=subdirectory,
+            file_path=str(file_path),
+            size_bytes=saved_size,
+        ).model_dump(mode="json"))
+        
+    except Exception as e:
+        error_msg = f"Failed to save data file: {e}"
+        logger.error(error_msg)
+        return jsonify(UploadDataFileResponse(
+            success=False,
+            message=error_msg,
+            filename=file.filename,
+            subdirectory=subdirectory,
+            file_path="",
         ).model_dump(mode="json")), 500
 
 
@@ -608,16 +684,17 @@ def main():
     # Log server info
     logger.info(f"Server will be available at: http://{args.host}:{args.port}")
     logger.info("Endpoints:")
-    logger.info("  GET  /              - Service information")
-    logger.info("  GET  /health        - Health check")
-    logger.info("  GET  /status        - Detailed status")
-    logger.info("  POST /setup         - Upload project and launch APx")
-    logger.info("  GET  /list          - List sequences, signal paths, measurements")
-    logger.info("  POST /run-sequence  - Activate and run a sequence")
-    logger.info("  POST /get-result    - Download test results as zip")
+    logger.info("  GET  /                 - Service information")
+    logger.info("  GET  /health           - Health check")
+    logger.info("  GET  /status           - Detailed status")
+    logger.info("  POST /setup            - Upload project and launch APx")
+    logger.info("  POST /upload-data-file - Upload a data file to subdirectory")
+    logger.info("  GET  /list             - List sequences, signal paths, measurements")
+    logger.info("  POST /run-sequence     - Activate and run a sequence")
+    logger.info("  POST /get-result       - Download test results as zip")
     logger.info("  POST /set-user-defined-variable - Set a user-defined variable")
-    logger.info("  POST /shutdown      - Shutdown APx")
-    logger.info("  POST /reset         - Kill APx and reset state")
+    logger.info("  POST /shutdown         - Shutdown APx")
+    logger.info("  POST /reset            - Kill APx and reset state")
     logger.info("=" * 60)
     
     # Run Flask app

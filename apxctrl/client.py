@@ -4,19 +4,25 @@ Example client for APx Control Server.
 
 Usage:
     # Upload project and show structure
-    python client_example.py --server http://windows-host:5000 --project /path/to/project.approjx
+    python client.py --server http://windows-host:5000 --project /path/to/project.approjx
+    
+    # Upload data files to a subdirectory
+    python client.py --server http://windows-host:5000 --upload-data-file calibration.csv --subdirectory acoustic-test-data
+    
+    # Upload data file to root data directory (next to project)
+    python client.py --server http://windows-host:5000 --upload-data-file config.csv
     
     # List project structure (sequences -> signal paths -> measurements)
-    python client_example.py --server http://windows-host:5000 --list
+    python client.py --server http://windows-host:5000 --list
     
     # Run a sequence with test run ID
-    python client_example.py --server http://windows-host:5000 --run-sequence "Production Test" --test-run-id "TR-001"
+    python client.py --server http://windows-host:5000 --run-sequence "Production Test" --test-run-id "TR-001"
     
     # Download test results
-    python client_example.py --server http://windows-host:5000 --get-result "TR-001" --results-path "C:\\Users\\user\\output" --output ./results.zip
+    python client.py --server http://windows-host:5000 --get-result "TR-001" --results-path "C:\\apx-data\\TR-001" --output ./results.zip
     
     # Reset server
-    python client_example.py --server http://windows-host:5000 --reset
+    python client.py --server http://windows-host:5000 --reset
 """
 from __future__ import annotations
 
@@ -201,6 +207,42 @@ def get_result(server: str, test_run_id: str, results_path: str, output_path: Pa
     return True
 
 
+def upload_data_file(server: str, file_path: Path, subdirectory: str = "") -> dict:
+    """Upload a data file to the server."""
+    print(f"\n{'='*60}")
+    print(f"Uploading data file: {file_path}")
+    if subdirectory:
+        print(f"Subdirectory: {subdirectory}")
+    print(f"{'='*60}")
+    
+    if not file_path.exists():
+        print(f"  ERROR: File not found: {file_path}")
+        return {"success": False, "message": "File not found"}
+    
+    file_size = file_path.stat().st_size
+    print(f"  File size: {file_size} bytes")
+    print("  Uploading...")
+    
+    with open(file_path, "rb") as f:
+        files = {"file": (file_path.name, f)}
+        data = {"subdirectory": subdirectory} if subdirectory else {}
+        
+        response = requests.post(f"{server}/upload-data-file", files=files, data=data)
+    
+    result = response.json()
+    
+    if result["success"]:
+        print(f"  ✓ Success!")
+        print(f"  Filename:     {result['filename']}")
+        print(f"  Subdirectory: {result['subdirectory'] or '(root)'}")
+        print(f"  Server Path:  {result['file_path']}")
+        print(f"  Size:         {result['size_bytes']} bytes")
+    else:
+        print(f"  ✗ Failed: {result['message']}")
+    
+    return result
+
+
 def shutdown_server(server: str, force: bool = False) -> dict:
     """Shutdown APx gracefully."""
     print(f"\n{'='*60}")
@@ -288,6 +330,17 @@ def main():
         default=Path("results.zip"),
         help="Local path to save the downloaded results zip (default: results.zip)",
     )
+    parser.add_argument(
+        "--upload-data-file",
+        type=Path,
+        metavar="FILE",
+        help="Upload a data file to the server",
+    )
+    parser.add_argument(
+        "--subdirectory",
+        default="",
+        help="Subdirectory for data file (e.g., 'acoustic-test-data'). Empty = root data dir",
+    )
     args = parser.parse_args()
     
     # Check server health first
@@ -324,6 +377,11 @@ def main():
             args.output,
         )
         sys.exit(0 if success else 1)
+    
+    # Handle upload-data-file
+    if args.upload_data_file:
+        result = upload_data_file(args.server, args.upload_data_file, args.subdirectory)
+        sys.exit(0 if result["success"] else 1)
     
     # Always check status first
     status = check_status(args.server)

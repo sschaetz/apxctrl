@@ -242,3 +242,17 @@ class SetUserDefinedVariableResponse(BaseModel):
     name: str
     value: str
     apx_state: APxState
+
+
+# ============================================================================
+# Upload Data File Models
+# ============================================================================
+
+class UploadDataFileResponse(BaseModel):
+    """Response for uploading a data file."""
+    success: bool
+    message: str
+    filename: str
+    subdirectory: str
+    file_path: str
+    size_bytes: int = 0
