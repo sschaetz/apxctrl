@@ -256,3 +256,14 @@ class UploadDataFileResponse(BaseModel):
     subdirectory: str
     file_path: str
     size_bytes: int = 0
+
+
+# ============================================================================
+# Data Path Models
+# ============================================================================
+
+class DataPathResponse(BaseModel):
+    """Response for data path endpoint."""
+    success: bool
+    message: str
+    data_path: str

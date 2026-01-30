@@ -19,6 +19,7 @@ from flask import Flask, jsonify, request, send_file
 from apxctrl.controller import APxController
 from apxctrl.model import (
     APxState,
+    DataPathResponse,
     GetResultRequest,
     GetResultResponse,
     HealthResponse,
@@ -44,6 +45,13 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+# Data directory for project files and uploaded data
+DATA_DIR = Path.home() / "apxctrl-data"
 
 # Flask app
 app = Flask(__name__)
@@ -84,6 +92,7 @@ def index():
             "GET /": "Service information",
             "GET /health": "Quick health check",
             "GET /status": "Detailed status",
+            "GET /data-path": "Get the server data directory path",
             "POST /setup": "Upload project and launch APx",
             "POST /upload-data-file": "Upload a data file to a subdirectory",
             "GET /list": "List sequences, signal paths, and measurements",
@@ -150,6 +159,20 @@ def status():
     return jsonify(response.model_dump(mode="json"))
 
 
+@app.route("/data-path", methods=["GET"])
+def data_path():
+    """
+    Get the server's data directory path.
+    
+    Returns the path where project files and data files are stored.
+    """
+    return jsonify(DataPathResponse(
+        success=True,
+        message="Data path retrieved successfully",
+        data_path=str(DATA_DIR),
+    ).model_dump(mode="json"))
+
+
 @app.route("/setup", methods=["POST"])
 def setup():
     """
@@ -199,10 +222,9 @@ def setup():
         # Use original filename or project_name
         safe_filename = file.filename or "project.approjx"
         
-        data_dir = Path.home() / "apxctrl-data"
-        data_dir.mkdir(parents=True, exist_ok=True)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        project_path = data_dir / safe_filename
+        project_path = DATA_DIR / safe_filename
         
         logger.info(f"Saving project file to: {project_path}")
         file.save(str(project_path))
@@ -295,13 +317,11 @@ def upload_data_file():
     
     try:
         # Create target directory
-        data_dir = Path.home() / "apxctrl-data"
-        if subdirectory:
-            data_dir = data_dir / subdirectory
-        data_dir.mkdir(parents=True, exist_ok=True)
+        target_dir = DATA_DIR / subdirectory if subdirectory else DATA_DIR
+        target_dir.mkdir(parents=True, exist_ok=True)
         
         # Save file (overwrites existing)
-        file_path = data_dir / file.filename
+        file_path = target_dir / file.filename
         logger.info(f"Saving data file to: {file_path}")
         file.save(str(file_path))
         
@@ -682,6 +702,7 @@ def main():
     logger.info("  GET  /                 - Service information")
     logger.info("  GET  /health           - Health check")
     logger.info("  GET  /status           - Detailed status")
+    logger.info("  GET  /data-path        - Get the server data directory path")
     logger.info("  POST /setup            - Upload project and launch APx")
     logger.info("  POST /upload-data-file - Upload a data file to subdirectory")
     logger.info("  GET  /list             - List sequences, signal paths, measurements")
