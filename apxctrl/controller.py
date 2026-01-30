@@ -245,23 +245,28 @@ class APxController:
         """
         Shutdown APx500 gracefully.
         
+        Always waits 10 seconds after shutdown to ensure APx is fully closed
+        before allowing a new launch.
+        
         Args:
             force: If True, force-kill the process if graceful shutdown fails
             
         Returns:
             True if successful, False otherwise
         """
+        success = True
         try:
             if self._apx_instance is not None:
                 logger.info("Closing APx500 gracefully...")
                 try:
                     self._apx_instance.Close()
-                    time.sleep(1)  # Give it a moment to close
                 except Exception as e:
                     logger.warning(f"Graceful close failed: {e}")
                     if force:
                         logger.info("Force-killing APx500...")
                         self.kill_existing_apx_processes()
+                    else:
+                        success = False
             
             self._apx_instance = None
             self._state.apx_state = APxState.NOT_RUNNING
@@ -269,7 +274,6 @@ class APxController:
             self._state.project = None
             
             logger.info("APx500 shutdown complete")
-            return True
             
         except Exception as e:
             error_msg = f"Error during shutdown: {e}"
@@ -279,9 +283,14 @@ class APxController:
             
             if force:
                 self.kill_existing_apx_processes()
-                return True
-            
-            return False
+            else:
+                success = False
+        finally:
+            # Always wait to ensure APx is fully closed before allowing relaunch
+            logger.info("Waiting 10s for APx to fully shutdown...")
+            time.sleep(10)
+        
+        return success
     
     def reset(self) -> int:
         """
