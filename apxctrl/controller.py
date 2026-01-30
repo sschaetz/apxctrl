@@ -155,10 +155,12 @@ class APxController:
         project_path: Path,
         project_name: Optional[str] = None,
         apx_mode: str = "SequenceMode",
-        apx_args: str = "-Demo -APx517",
+        apx_args: str = "",
     ) -> bool:
         """
         Launch APx500 and open a project file.
+        
+        If APx is already running, it will be shut down first.
         
         Args:
             project_path: Path to the .approjx project file
@@ -170,6 +172,11 @@ class APxController:
             True if successful, False otherwise
         """
         try:
+            # If APx is already running, shut it down first
+            if self._apx_instance is not None:
+                logger.info("APx already running, shutting down first...")
+                self.shutdown(force=True)
+            
             self._state.apx_state = APxState.STARTING
             
             # Verify project file exists and has content

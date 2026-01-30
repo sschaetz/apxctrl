@@ -193,11 +193,6 @@ def setup():
     apx_mode = request.form.get("apx_mode", "SequenceMode")
     apx_args = request.form.get("apx_args", "")
     
-    # If APx is already running, shut it down first
-    if state.apx_state in (APxState.IDLE, APxState.ERROR):
-        logger.info("Shutting down existing APx instance before setup")
-        controller.shutdown(force=True)
-    
     # Save file to ~/apxctrl-data/
     # (APx needs write access to the project directory)
     try:
