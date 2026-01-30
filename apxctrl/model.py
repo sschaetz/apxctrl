@@ -78,7 +78,7 @@ class SetupRequest(BaseModel):
         description="APx operating mode"
     )
     apx_args: str = Field(
-        default="-Demo -APx517",
+        default="",
         description="Additional APx command line arguments"
     )
 

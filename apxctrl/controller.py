@@ -287,8 +287,8 @@ class APxController:
                 success = False
         finally:
             # Always wait to ensure APx is fully closed before allowing relaunch
-            logger.info("Waiting 10s for APx to fully shutdown...")
-            time.sleep(10)
+            logger.info("Waiting 25s for APx to fully shutdown...")
+            time.sleep(25)
         
         return success
     
