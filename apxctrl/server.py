@@ -16,6 +16,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_file
 
+from apxctrl import __version__
 from apxctrl.controller import APxController
 from apxctrl.model import (
     APxState,
@@ -87,7 +88,7 @@ def index():
     """Service information and available endpoints."""
     return jsonify({
         "service": "APx Control Server",
-        "version": "1.0.0",
+        "version": __version__,
         "endpoints": {
             "GET /": "Service information",
             "GET /health": "Quick health check",
