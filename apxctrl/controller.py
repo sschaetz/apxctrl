@@ -560,6 +560,57 @@ class APxController:
             logger.error(error_msg)
             return None, None, error_msg
 
+    def get_show_auto_saved_report(self) -> tuple[Optional[bool], Optional[str]]:
+        """
+        Get the ShowAutoSavedReport property from APx.
+        
+        Maps to APx.Sequence.Report.ShowAutoSavedReport (Boolean property).
+        
+        Returns:
+            Tuple of (current value or None, error message or None)
+        """
+        if err := self._require_apx():
+            return None, err
+        
+        try:
+            value = self._apx_instance.Sequence.Report.ShowAutoSavedReport
+            logger.info(f"ShowAutoSavedReport = {value}")
+            return bool(value), None
+            
+        except Exception as e:
+            error_msg = f"Error getting ShowAutoSavedReport: {e}"
+            logger.error(error_msg)
+            return None, error_msg
+
+    def set_show_auto_saved_report(
+        self,
+        value: bool,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Set the ShowAutoSavedReport property in APx.
+        
+        Maps to APx.Sequence.Report.ShowAutoSavedReport (Boolean property).
+        
+        Args:
+            value: Whether to show the auto-saved report
+            
+        Returns:
+            Tuple of (success, error message or None)
+        """
+        if err := self._require_apx():
+            return False, err
+        
+        try:
+            logger.info(f"Setting ShowAutoSavedReport = {value}")
+            self._apx_instance.Sequence.Report.ShowAutoSavedReport = value
+            logger.info(f"ShowAutoSavedReport set to {value}")
+            return True, None
+            
+        except Exception as e:
+            error_msg = f"Error setting ShowAutoSavedReport: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
     def set_user_defined_variable(
         self,
         name: str,
