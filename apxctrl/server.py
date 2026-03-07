@@ -33,6 +33,8 @@ from apxctrl.model import (
     SetupResponse,
     SetUserDefinedVariableRequest,
     SetUserDefinedVariableResponse,
+    ShowAutoSavedReportRequest,
+    ShowAutoSavedReportResponse,
     ShutdownRequest,
     ShutdownResponse,
     StatusResponse,
@@ -100,6 +102,8 @@ def index():
             "POST /run-sequence": "Activate and run a sequence",
             "POST /get-result": "Download test results as zip",
             "POST /set-user-defined-variable": "Set a user-defined variable",
+            "GET /show-auto-saved-report": "Get ShowAutoSavedReport property",
+            "POST /show-auto-saved-report": "Set ShowAutoSavedReport property",
             "POST /shutdown": "Shutdown APx gracefully",
             "POST /reset": "Kill APx and reset state",
         },
@@ -508,6 +512,75 @@ def get_result():
     )
 
 
+@app.route("/show-auto-saved-report", methods=["GET", "POST"])
+def show_auto_saved_report():
+    """
+    Get or set the ShowAutoSavedReport property.
+    
+    Maps to APx.Sequence.Report.ShowAutoSavedReport (Boolean).
+    
+    GET: Returns the current value.
+    POST expects JSON body:
+    {
+        "value": true
+    }
+    """
+    state = get_state()
+    controller = get_controller()
+    
+    if request.method == "GET":
+        value, error = controller.get_show_auto_saved_report()
+        
+        if error:
+            return jsonify(ShowAutoSavedReportResponse(
+                success=False,
+                message=error,
+                apx_state=state.apx_state,
+            ).model_dump(mode="json")), 500
+        
+        return jsonify(ShowAutoSavedReportResponse(
+            success=True,
+            message=f"ShowAutoSavedReport is {value}",
+            value=value,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json"))
+    
+    # POST — set the value
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify(ShowAutoSavedReportResponse(
+                success=False,
+                message="Request body must be JSON",
+                apx_state=state.apx_state,
+            ).model_dump(mode="json")), 400
+        
+        req = ShowAutoSavedReportRequest(**data)
+    except Exception as e:
+        return jsonify(ShowAutoSavedReportResponse(
+            success=False,
+            message=f"Invalid request: {e}",
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 400
+    
+    success, error = controller.set_show_auto_saved_report(value=req.value)
+    
+    if error:
+        return jsonify(ShowAutoSavedReportResponse(
+            success=False,
+            message=error,
+            value=req.value,
+            apx_state=state.apx_state,
+        ).model_dump(mode="json")), 500
+    
+    return jsonify(ShowAutoSavedReportResponse(
+        success=True,
+        message=f"ShowAutoSavedReport set to {req.value}",
+        value=req.value,
+        apx_state=state.apx_state,
+    ).model_dump(mode="json"))
+
+
 @app.route("/shutdown", methods=["POST"])
 def shutdown():
     """
@@ -710,6 +783,8 @@ def main():
     logger.info("  POST /run-sequence     - Activate and run a sequence")
     logger.info("  POST /get-result       - Download test results as zip")
     logger.info("  POST /set-user-defined-variable - Set a user-defined variable")
+    logger.info("  GET  /show-auto-saved-report   - Get ShowAutoSavedReport")
+    logger.info("  POST /show-auto-saved-report   - Set ShowAutoSavedReport")
     logger.info("  POST /shutdown         - Shutdown APx")
     logger.info("  POST /reset            - Kill APx and reset state")
     logger.info("=" * 60)

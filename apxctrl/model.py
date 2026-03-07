@@ -245,6 +245,23 @@ class SetUserDefinedVariableResponse(BaseModel):
 
 
 # ============================================================================
+# Show Auto Saved Report Models
+# ============================================================================
+
+class ShowAutoSavedReportRequest(BaseModel):
+    """Request for setting ShowAutoSavedReport."""
+    value: bool = Field(..., description="Whether to show the auto-saved report")
+
+
+class ShowAutoSavedReportResponse(BaseModel):
+    """Response for ShowAutoSavedReport getter/setter."""
+    success: bool
+    message: str
+    value: Optional[bool] = None
+    apx_state: APxState
+
+
+# ============================================================================
 # Upload Data File Models
 # ============================================================================
 
