@@ -38,16 +38,40 @@ class APxController:
     to the .NET API. Thread-safe for the simple 1:1 client model.
     """
     
-    def __init__(self, state: ServerState) -> None:
+    def __init__(self, state: ServerState, data_dir: Path) -> None:
         """
         Initialize the controller.
         
         Args:
             state: Shared server state object
+            data_dir: Data directory for project files and results
         """
         self._state = state
+        self._data_dir = data_dir
         self._apx_instance = None  # Will hold the .NET APx500_Application object
         self._clr_initialized = False
+    
+    def _deprecate_result_csvs(self):
+        """
+        Rename all CSV files in the results directory to *_deprecated.csv.
+        """
+        results_dir = self._data_dir / "results"
+        if not results_dir.exists():
+            return 
+        
+        for csv_file in results_dir.glob("*.csv"):
+            # Skip files already deprecated
+            if csv_file.stem.endswith("_deprecated"):
+                continue
+            
+            new_name = csv_file.with_name(f"{csv_file.stem}_deprecated{csv_file.suffix}")
+            try:
+                csv_file.rename(new_name)
+                logger.info(f"Deprecated: {csv_file.name} -> {new_name.name}")
+            except Exception as e:
+                logger.warning(f"Failed to rename {csv_file}: {e}")
+        
+        return True 
     
     def _init_clr(self) -> None:
         """Initialize the CLR and load APx assemblies (lazy loading)."""
@@ -198,6 +222,9 @@ class APxController:
             
             # Determine the operating mode
             mode = getattr(APxOperatingMode, apx_mode, APxOperatingMode.SequenceMode)
+            
+            # Deprecate existing CSV files in results directory before starting APx
+            self._deprecate_result_csvs()
             
             # Create APx application instance
             logger.info(f"Creating APx500_Application with mode={apx_mode}, args={apx_args}")

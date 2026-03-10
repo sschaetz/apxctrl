@@ -76,7 +76,7 @@ def get_controller() -> APxController:
     """Get the global APx controller."""
     global _controller
     if _controller is None:
-        _controller = APxController(get_state())
+        _controller = APxController(get_state(), DATA_DIR)
     return _controller
 
 
@@ -762,7 +762,7 @@ def main():
     # Initialize global state and controller
     global _server_state, _controller
     _server_state = ServerState()
-    _controller = APxController(_server_state)
+    _controller = APxController(_server_state, DATA_DIR)
     
     # Kill existing APx processes if requested
     if args.kill_existing:
