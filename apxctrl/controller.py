@@ -51,27 +51,36 @@ class APxController:
         self._apx_instance = None  # Will hold the .NET APx500_Application object
         self._clr_initialized = False
     
-    def _deprecate_result_csvs(self):
+    def _deprecate_result_csvs(self) -> None:
         """
         Rename all CSV files in the results directory to *_deprecated.csv.
+        
+        If a deprecated file already exists, appends _1, _2, etc. to find
+        a unique name.
         """
         results_dir = self._data_dir / "results"
         if not results_dir.exists():
-            return 
+            return
         
         for csv_file in results_dir.glob("*.csv"):
             # Skip files already deprecated
-            if csv_file.stem.endswith("_deprecated"):
+            if "_deprecated" in csv_file.stem:
                 continue
             
-            new_name = csv_file.with_name(f"{csv_file.stem}_deprecated{csv_file.suffix}")
+            # Find a unique deprecated name
+            base_name = f"{csv_file.stem}_deprecated"
+            new_name = csv_file.with_name(f"{base_name}{csv_file.suffix}")
+            
+            counter = 1
+            while new_name.exists():
+                new_name = csv_file.with_name(f"{base_name}_{counter}{csv_file.suffix}")
+                counter += 1
+            
             try:
                 csv_file.rename(new_name)
                 logger.info(f"Deprecated: {csv_file.name} -> {new_name.name}")
             except Exception as e:
                 logger.warning(f"Failed to rename {csv_file}: {e}")
-        
-        return True 
     
     def _init_clr(self) -> None:
         """Initialize the CLR and load APx assemblies (lazy loading)."""
